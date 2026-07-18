@@ -1,3 +1,9 @@
 bin/
 obj/
 Log/
+
+# Visual Studio / tooling artefakty
+.vs/
+*.user
+launchSettings.json
+.claude/
