@@ -53,15 +53,17 @@ namespace JurhanService_RozuctovanieDopravcov
             using (ImapClient client = new ImapClient())
             {
                 client.Connect(Constants.ClientHostImapJurhan, 993, true);
-                client.Authenticate(Constants.MessageToPlatbyJurhan, Constants.ClientPasswordPlatby);
+                client.Authenticate(Constants.MessageToPlatbyJurhan, Constants.ClientPasswordJurhan);
 
-                foreach (IMailFolder folder in client.GetFolders(client.PersonalNamespaces[0]))
+                var folders = client.GetFolders(client.PersonalNamespaces[0]);
+
+                foreach (IMailFolder folder in folders)
                 {
-                    if (!string.IsNullOrEmpty(folder.ParentFolder?.FullName))
-                    {
-                        // spracuvame len priecinky priamo pod korenom schranky (podpriecinky = "Zaúčtované" a pod.)
-                        continue;
-                    }
+                    //if (!string.IsNullOrEmpty(folder.ParentFolder?.FullName))
+                    //{
+                    //    // spracuvame len priecinky priamo pod korenom schranky (podpriecinky = "Zaúčtované" a pod.)
+                    //    continue;
+                    //}
 
                     if (folder.Name == NazovPodpriecinkaZauctovane)
                     {
