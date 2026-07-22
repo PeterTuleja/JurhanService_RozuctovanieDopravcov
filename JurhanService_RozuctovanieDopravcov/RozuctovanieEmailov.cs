@@ -5,7 +5,6 @@ using MailKit;
 using MailKit.Net.Imap;
 using MailKit.Search;
 using MimeKit;
-using OmegaLib.Enums;
 using OmegaLib.Repository;
 using OmegaLib.Services;
 using System;
@@ -25,8 +24,8 @@ namespace JurhanService_RozuctovanieDopravcov
         private static readonly string[] _povolenePripony = { ".csv", ".xlsx", ".xls" };
 
         private readonly PripojeneFirmy _pripojeneFirmy;
-        private readonly RozuctovanieLogger _logger;
         private readonly string _workDir;
+        private readonly RozuctovanieLogger _logger;
 
         internal RozuctovanieEmailov(PripojeneFirmy pripojeneFirmy, RozuctovanieLogger logger)
         {
@@ -38,6 +37,8 @@ namespace JurhanService_RozuctovanieDopravcov
         internal void Execute()
         {
             Directory.CreateDirectory(_workDir);
+            ServicesLog.VytvorLogovaciAdresar();
+            _logger.NacitajDataZoSuboru();
             try
             {
                 foreach (string f in Directory.GetFiles(_workDir))
@@ -89,6 +90,9 @@ namespace JurhanService_RozuctovanieDopravcov
 
                 client.Disconnect(true);
             }
+
+            _logger.ZapisDataDoSuboru();
+            _logger.PosliLogSuborEmailom(new List<string> { Constants.MessageToTulejaX });
         }
 
         private void SpracujPriecinok(IMailFolder folder, eTypSuboru typSuboru)
