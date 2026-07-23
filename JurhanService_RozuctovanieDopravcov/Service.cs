@@ -5,6 +5,10 @@ namespace JurhanService_RozuctovanieDopravcov
 {
     internal class Service : ServiceJurhan
     {
+        public Service() : base(new RozuctovanieLogger())
+        {
+        }
+
         public override void ExecuteRun()
         {
             Execute execute = new Execute();
