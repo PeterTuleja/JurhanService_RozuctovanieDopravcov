@@ -113,7 +113,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 try
                 {
                     MimeMessage message = folder.GetMessage(uid);
-                    if (SpracujEmail(message, typSuboru))
+                    if (SpracujEmail(message, typSuboru, folder.Name))
                     {
                         if (zauctovane == null)
                         {
@@ -134,7 +134,7 @@ namespace JurhanService_RozuctovanieDopravcov
         }
 
         /// <returns>true, ak sa ma email presunut do podpriecinka "Zaúčtované"</returns>
-        private bool SpracujEmail(MimeMessage message, eTypSuboru typSuboru)
+        private bool SpracujEmail(MimeMessage message, eTypSuboru typSuboru, string nazovPriecinka)
         {
             bool asponJedenSubor = false;
             bool vsetkoZauctovane = true;
@@ -151,7 +151,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 asponJedenSubor = true;
                 _logger.Loguj($"Email '{message.Subject}': spracúvam súbor {Path.GetFileName(filePath)}.", true);
 
-                eVysledokRozuctovania vysledok = SpracujSubor(filePath, typSuboru);
+                eVysledokRozuctovania vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka);
                 _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: {vysledok}.", true);
 
                 // duplicita = subor uz bol zauctovany skor -> email tiez patri do "Zaúčtované"
@@ -164,7 +164,7 @@ namespace JurhanService_RozuctovanieDopravcov
             return asponJedenSubor && vsetkoZauctovane;
         }
 
-        private eVysledokRozuctovania SpracujSubor(string filePath, eTypSuboru typSuboru)
+        private eVysledokRozuctovania SpracujSubor(string filePath, eTypSuboru typSuboru, string nazovPriecinka)
         {
             short mesiac = NazovSuboru.DajMesiac(Path.GetFileNameWithoutExtension(filePath));
             if (Lib.NastavTypRozuctovania(typSuboru) == eTypRozuctovania.BezZapoctuBanky && mesiac == 0)
@@ -184,7 +184,8 @@ namespace JurhanService_RozuctovanieDopravcov
                 typSuboru = typSuboru,
                 fileName = filePath,
                 mesiac = mesiac,
-                interneCislo = null, // bankovy doklad sa hlada podla poznamky = nazov suboru bez pripony
+                interneCislo = null, // sluzba: doklad sa hlada podla textu hlavicky (C099) a datumu vypisu
+                nazovPriecinka = nazovPriecinka,
                 zobrazenieChyby = eZobrazenieChyby.ZapisDoSuboru,
                 typSpustenia = Program.typSpustenia,
             };
