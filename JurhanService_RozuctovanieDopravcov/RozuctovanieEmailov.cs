@@ -140,8 +140,29 @@ namespace JurhanService_RozuctovanieDopravcov
             bool vsetkoZauctovane = true;
 
             // BodyParts namiesto Attachments - dopravcovia posielaju subory aj ako inline prilohy (bez Content-Disposition: attachment)
-            foreach (MimePart attachment in message.BodyParts.OfType<MimePart>().Where(p => !string.IsNullOrEmpty(p.FileName)))
+            List<MimePart> prilohy = message.BodyParts.OfType<MimePart>()
+                .Where(p => !string.IsNullOrEmpty(p.FileName))
+                .ToList();
+
+            // niektori dopravcovia (napr. GoPay) posielaju ten isty vypis ako .csv aj .xlsx.
+            // .xlsx sa nekonvertuje (nie je v PreConvertCsv) a CSV parser ho nespracuje (Chyba/MalformedLineException),
+            // preto ak k rovnakemu nazvu existuje .csv, tabulkoveho dvojnika (.xlsx/.xls) preskakujeme.
+            HashSet<string> zakladySCsv = new HashSet<string>(
+                prilohy.Where(p => string.Equals(Path.GetExtension(p.FileName), ".csv", StringComparison.OrdinalIgnoreCase))
+                       .Select(p => Path.GetFileNameWithoutExtension(p.FileName)),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (MimePart attachment in prilohy)
             {
+                string pripona = Path.GetExtension(attachment.FileName);
+                if ((string.Equals(pripona, ".xlsx", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(pripona, ".xls", StringComparison.OrdinalIgnoreCase))
+                    && zakladySCsv.Contains(Path.GetFileNameWithoutExtension(attachment.FileName)))
+                {
+                    _logger.Loguj($"Email '{message.Subject}': prílohu {attachment.FileName} preskakujem (existuje .csv verzia).", true);
+                    continue;
+                }
+
                 string filePath = UlozPrilohu(attachment);
                 if (filePath == null)
                 {
