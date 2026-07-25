@@ -207,6 +207,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 mesiac = mesiac,
                 interneCislo = null, // sluzba: doklad sa hlada podla textu hlavicky (C099) a datumu vypisu
                 nazovPriecinka = nazovPriecinka,
+                Loguj = s => _logger.Loguj(s, true), // kritéria hľadania dokladu do logu služby
                 zobrazenieChyby = eZobrazenieChyby.ZapisDoSuboru,
                 typSpustenia = Program.typSpustenia,
             };
