@@ -213,7 +213,11 @@ namespace JurhanService_RozuctovanieDopravcov
             };
 
             RozuctovanieCore core = new RozuctovanieCore(ctx);
-            ServicesFile.ZalohujSubor(filePath); // zaloha do <exe>\Log s casovou peciatkou (spec: subor sa po spracovani zmaze, zaloha ostava)
+            // zaloha do <exe>\Log s povodnym nazvom prilohy (bez casovej peciatky);
+            // subor sa po spracovani z pracovneho adresara zmaze, zaloha ostava (pri rovnakom nazve sa prepise)
+            string zalohaDir = ServicesLog.NameApplicationLogPath();
+            Directory.CreateDirectory(zalohaDir);
+            File.Copy(filePath, Path.Combine(zalohaDir, Path.GetFileName(filePath)), true);
             eVysledokRozuctovania vysledok;
             try
             {
