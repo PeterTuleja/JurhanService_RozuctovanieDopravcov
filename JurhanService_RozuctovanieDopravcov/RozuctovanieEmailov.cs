@@ -74,7 +74,9 @@ namespace JurhanService_RozuctovanieDopravcov
                     eTypSuboru typSuboru = FolderMapping.DajTypSuboru(folder.Name);
                     if (typSuboru == eTypSuboru.Undefined)
                     {
+                        _logger.PrazdnyRiadok(1);
                         _logger.Loguj($"Priečinok '{folder.FullName}' nie je namapovaný na typ dopravcu - preskakujem.", true);
+                        _logger.PrazdnyRiadok(1);
                         continue;
                     }
 
@@ -105,7 +107,9 @@ namespace JurhanService_RozuctovanieDopravcov
                 return;
             }
 
+            _logger.PrazdnyRiadok(1);
             _logger.Loguj($"Priečinok '{folder.FullName}' ({typSuboru}): {uids.Count} emailov.", true);
+            _logger.PrazdnyRiadok(1);
 
             IMailFolder zauctovane = null;
             foreach (UniqueId uid in uids)
@@ -208,6 +212,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 interneCislo = null, // sluzba: doklad sa hlada podla textu hlavicky (C099) a datumu vypisu
                 nazovPriecinka = nazovPriecinka,
                 Loguj = s => _logger.Loguj(s, true), // kritéria hľadania dokladu do logu služby
+                PrazdnyRiadok = n => _logger.PrazdnyRiadok(n),
                 zobrazenieChyby = eZobrazenieChyby.ZapisDoSuboru,
                 typSpustenia = Program.typSpustenia,
             };
