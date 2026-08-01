@@ -167,6 +167,17 @@ namespace JurhanService_RozuctovanieDopravcov
                     continue;
                 }
 
+                // PRIPRAVENÉ NA OSTRÚ PREVÁDZKU (zatiaľ zakomentované): samostatný email s duplikátom -
+                // súbor s rovnakým názvom (inou príponou) už bol rozúčtovaný z iného emailu, počíta sa ako
+                // zaúčtovaný, aby sa aj tento email presunul do podpriečinka "Zaúčtované".
+                //if (_povolenePripony.Contains(Path.GetExtension(attachment.FileName).ToLowerInvariant())
+                //    && SuborUzBolRozuctovany(attachment.FileName))
+                //{
+                //    _logger.Loguj($"Email '{message.Subject}': súbor {attachment.FileName} už bol rozúčtovaný z iného emailu - počítam ako zaúčtovaný.", true);
+                //    asponJedenSubor = true;
+                //    continue;
+                //}
+
                 string filePath = UlozPrilohu(attachment);
                 if (filePath == null)
                 {
@@ -236,6 +247,18 @@ namespace JurhanService_RozuctovanieDopravcov
                 }
             }
             return vysledok;
+        }
+
+        /// <summary>
+        /// Súbor s týmto názvom (bez prípony) už bol rozúčtovaný - existuje doklad s C149_ImportText.
+        /// Kontrolujú sa oba vzory: holý názov aj "dopravca: názov" (zapisuje ho rozúčtovanie).
+        /// </summary>
+        private bool SuborUzBolRozuctovany(string fileName)
+        {
+            string nazov = Path.GetFileNameWithoutExtension(fileName);
+            return new EudHlavickaRepository(_pripojeneFirmy.dataProvider)
+                .DajDoklady("C149_ImportText = @1 OR C149_ImportText = @2", nazov, "dopravca: " + nazov)
+                .Any();
         }
 
         private string UlozPrilohu(MimePart attachment)
