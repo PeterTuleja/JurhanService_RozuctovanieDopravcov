@@ -30,6 +30,8 @@ namespace JurhanService_RozuctovanieDopravcov
         private readonly RozuctovanieLogger _logger;
         // log subory z rozuctovania (_rozuctovane/_nesparovane/...) za cely beh - posielaju sa jednym emailom na konci
         private readonly List<string> _logSuboryRozuctovania = new List<string>();
+        // vynimky (s call stackom) zachytene pocas behu - na konci sa z nich sklada celkovy vysledok do .err suboru
+        private readonly List<string> _chybyBehu = new List<string>();
 
         internal RozuctovanieEmailov(PripojeneFirmy pripojeneFirmy, RozuctovanieLogger logger)
         {
@@ -53,6 +55,7 @@ namespace JurhanService_RozuctovanieDopravcov
             catch (Exception ex)
             {
                 _logger.Loguj($"Nepodarilo sa vyčistiť pracovný adresár '{_workDir}': {ex}", true);
+                _chybyBehu.Add($"Pracovný adresár '{_workDir}': {ex}");
             }
 
             using (ImapClient client = new ImapClient())
@@ -91,6 +94,7 @@ namespace JurhanService_RozuctovanieDopravcov
                     catch (Exception ex)
                     {
                         _logger.Loguj($"Chyba pri spracovaní priečinka '{folder.FullName}': {ex}", true);
+                        _chybyBehu.Add($"Priečinok '{folder.FullName}': {ex}");
                     }
                 }
 
@@ -98,9 +102,29 @@ namespace JurhanService_RozuctovanieDopravcov
             }
 
             PosliLogSuboryRozuctovania();
+            ZapisCelkovyVysledokDoErrSuboru();
 
             _logger.ZapisDataDoSuboru();
             _logger.PosliLogSuborEmailom(new List<string> { Constants.MessageToTulejaX });
+        }
+
+        /// <summary>
+        /// .err subor ma odrazat cely beh, nie poslednu hlasku z rozuctovania jedneho suboru (hlasky typu
+        /// "Nenašiel sa bankový výpis..." nie su chyby behu). Ak pocas behu nastali vynimky, zapisu sa
+        /// vsetky s call stackom; inak sa zapise, ze beh prebehol v poriadku.
+        /// </summary>
+        private void ZapisCelkovyVysledokDoErrSuboru()
+        {
+            if (_chybyBehu.Any())
+            {
+                ServicesError.ErrorEnd($"Beh rozúčtovania {DateTime.Now:dd.MM.yyyy HH:mm:ss} skončil s chybami ({_chybyBehu.Count}):" +
+                    Environment.NewLine + Environment.NewLine +
+                    string.Join(Environment.NewLine + Environment.NewLine, _chybyBehu));
+            }
+            else
+            {
+                ServicesError.ErrorEnd($"Beh rozúčtovania {DateTime.Now:dd.MM.yyyy HH:mm:ss} prebehol v poriadku.");
+            }
         }
 
         /// <summary>
@@ -168,6 +192,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 catch (Exception ex)
                 {
                     _logger.Loguj($"Chyba pri spracovaní emailu {uid} v priečinku '{folder.FullName}': {ex}", true);
+                    _chybyBehu.Add($"Email {uid} v priečinku '{folder.FullName}': {ex}");
                 }
             }
         }
