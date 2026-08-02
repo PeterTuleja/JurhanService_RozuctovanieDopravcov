@@ -1,5 +1,7 @@
+using JurhanLib.Email;
 using JurhanLib.Import;
 using JurhanLib.Import.Dopravcovia;
+using JurhanModels.Enum;
 using JurhanModels.Import;
 using MailKit;
 using MailKit.Net.Imap;
@@ -26,6 +28,8 @@ namespace JurhanService_RozuctovanieDopravcov
         private readonly PripojeneFirmy _pripojeneFirmy;
         private readonly string _workDir;
         private readonly RozuctovanieLogger _logger;
+        // log subory z rozuctovania (_rozuctovane/_nesparovane/...) za cely beh - posielaju sa jednym emailom na konci
+        private readonly List<string> _logSuboryRozuctovania = new List<string>();
 
         internal RozuctovanieEmailov(PripojeneFirmy pripojeneFirmy, RozuctovanieLogger logger)
         {
@@ -93,8 +97,39 @@ namespace JurhanService_RozuctovanieDopravcov
                 client.Disconnect(true);
             }
 
+            PosliLogSuboryRozuctovania();
+
             _logger.ZapisDataDoSuboru();
             _logger.PosliLogSuborEmailom(new List<string> { Constants.MessageToTulejaX });
+        }
+
+        /// <summary>
+        /// Vsetky log subory z rozuctovania za cely beh (_rozuctovane/_nesparovane/_uzuhradene/_nerozuctovane)
+        /// v jednom emaili. V mode servisa na obchod aj Tulejovi, inak iba Tulejovi.
+        /// </summary>
+        private void PosliLogSuboryRozuctovania()
+        {
+            if (!_logSuboryRozuctovania.Any())
+            {
+                return;
+            }
+
+            List<string> adresy = Program.typSpustenia == eTypSpustenia.Servica
+                ? new List<string> { Constants.MessageToObchodJurhan, Constants.MessageToTulejaX }
+                : new List<string> { Constants.MessageToTulejaX };
+
+            bool odoslane = EmailService.PosliEmail(
+                adresy,
+                null,
+                null,
+                "Log súbory z rozúčtovania dopravcov",
+                "V prílohe posielam log súbory zo spustenia programu pre rozúčtovanie dopravcov",
+                _logSuboryRozuctovania);
+            if (!odoslane)
+            {
+                _logger.Loguj($"Nepodarilo sa odoslať email so súbormi z rozúčtovania " +
+                    $"({string.Join(", ", _logSuboryRozuctovania.Select(Path.GetFileName))}).", true);
+            }
         }
 
         private void SpracujPriecinok(IMailFolder folder, eTypSuboru typSuboru)
@@ -245,6 +280,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 {
                     File.Delete(filePath);
                 }
+                _logSuboryRozuctovania.AddRange(ctx.logSuboryRozuctovania);
             }
             return vysledok;
         }
