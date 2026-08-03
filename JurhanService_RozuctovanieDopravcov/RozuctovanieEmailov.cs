@@ -25,6 +25,13 @@ namespace JurhanService_RozuctovanieDopravcov
         private const string NazovPodpriecinkaZauctovane = "Zaúčtované";
         private static readonly string[] _povolenePripony = { ".csv", ".xlsx", ".xls" };
 
+        // PILOT (skusobne nasadenie): v tychto priecinkoch sa robi ostre rozuctovanie (import do Omegy),
+        // vo vsetkych ostatnych sa rozuctovanie iba simuluje a loguje, co by sa v ostrej prevadzke stalo.
+        private static readonly string[] _pilotnePriecinky = { "INBOX.Dopravcovia.DPD HR" };
+        // PILOT krok b (zapnut az pred nasadenim na server): v pilotnych priecinkoch sa emaily aj presuvaju
+        // do podpriecinka "Zaúčtované"; kym je false, presun sa iba loguje.
+        private const bool PresuvatVPilotnychPriecinkoch = false;
+
         private readonly PripojeneFirmy _pripojeneFirmy;
         private readonly string _workDir;
         private readonly RozuctovanieLogger _logger;
@@ -166,8 +173,14 @@ namespace JurhanService_RozuctovanieDopravcov
                 return;
             }
 
+            bool pilotny = _pilotnePriecinky.Contains(folder.FullName);
+
             _logger.PrazdnyRiadok(1);
             _logger.Loguj($"Priečinok '{folder.FullName}' ({typSuboru}): {uids.Count} emailov.", true);
+            if (!pilotny)
+            {
+                _logger.Loguj($"[PILOT] Priečinok je mimo pilotu - rozúčtovanie sa iba simuluje (bez importu do Omegy a bez presunov).", true);
+            }
             _logger.PrazdnyRiadok(1);
 
             IMailFolder zauctovane = null;
@@ -176,17 +189,26 @@ namespace JurhanService_RozuctovanieDopravcov
                 try
                 {
                     MimeMessage message = folder.GetMessage(uid);
-                    if (SpracujEmail(message, typSuboru, folder.Name))
+                    if (SpracujEmail(message, typSuboru, folder.Name, ibaSimulacia: !pilotny))
                     {
-                        if (zauctovane == null)
+                        if (pilotny && PresuvatVPilotnychPriecinkoch)
                         {
-                            zauctovane = DajAleboVytvorZauctovane(folder);
-                        }
+                            if (zauctovane == null)
+                            {
+                                zauctovane = DajAleboVytvorZauctovane(folder);
+                            }
 
-                        // presuvame hned po zauctovani - pad medzi zauctovanim a davkovym presunom
-                        // by nechal zauctovane emaily navzdy v priecinku (pri retry vratia ZiadneUhrady)
-                        folder.MoveTo(uid, zauctovane);
-                        _logger.Loguj($"Email '{message.Subject}' presunutý do '{zauctovane.FullName}'.", true);
+                            // presuvame hned po zauctovani - pad medzi zauctovanim a davkovym presunom
+                            // by nechal zauctovane emaily navzdy v priecinku (pri retry vratia ZiadneUhrady)
+                            folder.MoveTo(uid, zauctovane);
+                            _logger.Loguj($"Email '{message.Subject}' presunutý do '{zauctovane.FullName}'.", true);
+                        }
+                        else
+                        {
+                            _logger.Loguj($"[PILOT] Email '{message.Subject}' by bol presunutý do " +
+                                $"'{folder.FullName}.{NazovPodpriecinkaZauctovane}'" +
+                                (pilotny ? " (presun v pilote zatiaľ vypnutý)." : " (priečinok mimo pilotu)."), true);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -198,7 +220,7 @@ namespace JurhanService_RozuctovanieDopravcov
         }
 
         /// <returns>true, ak sa ma email presunut do podpriecinka "Zaúčtované"</returns>
-        private bool SpracujEmail(MimeMessage message, eTypSuboru typSuboru, string nazovPriecinka)
+        private bool SpracujEmail(MimeMessage message, eTypSuboru typSuboru, string nazovPriecinka, bool ibaSimulacia)
         {
             bool asponJedenSubor = false;
             bool vsetkoZauctovane = true;
@@ -247,7 +269,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 asponJedenSubor = true;
                 _logger.Loguj($"Email '{message.Subject}': spracúvam súbor {Path.GetFileName(filePath)}.", true);
 
-                eVysledokRozuctovania vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka);
+                eVysledokRozuctovania vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka, ibaSimulacia);
                 _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: {vysledok}.", true);
 
                 // duplicita = subor uz bol zauctovany skor -> email tiez patri do "Zaúčtované"
@@ -260,7 +282,7 @@ namespace JurhanService_RozuctovanieDopravcov
             return asponJedenSubor && vsetkoZauctovane;
         }
 
-        private eVysledokRozuctovania SpracujSubor(string filePath, eTypSuboru typSuboru, string nazovPriecinka)
+        private eVysledokRozuctovania SpracujSubor(string filePath, eTypSuboru typSuboru, string nazovPriecinka, bool ibaSimulacia)
         {
             short mesiac = NazovSuboru.DajMesiac(Path.GetFileNameWithoutExtension(filePath));
             if (Lib.NastavTypRozuctovania(typSuboru) == eTypRozuctovania.BezZapoctuBanky && mesiac == 0)
@@ -282,6 +304,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 mesiac = mesiac,
                 interneCislo = null, // sluzba: doklad sa hlada podla textu hlavicky (C099) a datumu vypisu
                 nazovPriecinka = nazovPriecinka,
+                ibaSimulacia = ibaSimulacia, // pilot: mimo pilotnych priecinkov sa nic nezapisuje do Omegy
                 Loguj = s => _logger.Loguj(s, true), // kritéria hľadania dokladu do logu služby
                 PrazdnyRiadok = n => _logger.PrazdnyRiadok(n),
                 zobrazenieChyby = eZobrazenieChyby.ZapisDoSuboru,
