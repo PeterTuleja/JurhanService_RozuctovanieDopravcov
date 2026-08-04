@@ -15,6 +15,7 @@ namespace JurhanService_RozuctovanieDopravcov
         {
             RozuctovanieEmailov rozuctovanieEmailov = new RozuctovanieEmailov(pripojeneFirmy, _logger);
             rozuctovanieEmailov.Execute();
+            //new OpravaKurzuRozuctovania(pripojeneFirmy, _logger, dryRun: false).Execute();
         }
     }
 }

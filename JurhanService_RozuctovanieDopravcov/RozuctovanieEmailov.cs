@@ -30,7 +30,7 @@ namespace JurhanService_RozuctovanieDopravcov
         private static readonly string[] _pilotnePriecinky = { "INBOX.Dopravcovia.DPD HR" };
         // PILOT krok b (zapnut az pred nasadenim na server): v pilotnych priecinkoch sa emaily aj presuvaju
         // do podpriecinka "Zaúčtované"; kym je false, presun sa iba loguje.
-        private const bool PresuvatVPilotnychPriecinkoch = false;
+        private const bool PresuvatVPilotnychPriecinkoch = true;
 
         private readonly PripojeneFirmy _pripojeneFirmy;
         private readonly string _workDir;
