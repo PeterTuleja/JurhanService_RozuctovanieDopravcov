@@ -112,7 +112,18 @@ namespace JurhanService_RozuctovanieDopravcov
             ZapisCelkovyVysledokDoErrSuboru();
 
             _logger.ZapisDataDoSuboru();
-            _logger.PosliLogSuborEmailom(new List<string> { Constants.MessageToTulejaX });
+            _logger.PosliLogSuborEmailom(AdresatiEmailov());
+        }
+
+        /// <summary>
+        /// Adresati oboch emailov servisy (subory z rozuctovania aj logy sluzby):
+        /// v mode servisa obchod aj Tuleja, v mode program iba Tuleja.
+        /// </summary>
+        private static List<string> AdresatiEmailov()
+        {
+            return Program.typSpustenia == eTypSpustenia.Servica
+                ? new List<string> { Constants.MessageToObchodJurhan, Constants.MessageToTulejaX }
+                : new List<string> { Constants.MessageToTulejaX };
         }
 
         /// <summary>
@@ -145,12 +156,8 @@ namespace JurhanService_RozuctovanieDopravcov
                 return;
             }
 
-            List<string> adresy = Program.typSpustenia == eTypSpustenia.Servica
-                ? new List<string> { Constants.MessageToObchodJurhan, Constants.MessageToTulejaX }
-                : new List<string> { Constants.MessageToTulejaX };
-
             bool odoslane = EmailService.PosliEmail(
-                adresy,
+                AdresatiEmailov(),
                 null,
                 null,
                 "Log súbory z rozúčtovania dopravcov",
