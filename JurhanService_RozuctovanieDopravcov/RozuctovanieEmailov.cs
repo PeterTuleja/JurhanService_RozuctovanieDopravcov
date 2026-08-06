@@ -37,10 +37,7 @@ namespace JurhanService_RozuctovanieDopravcov
         private readonly RozuctovanieLogger _logger;
         // suhrnne zoznamy z rozuctovania za cely beh - na konci sa z nich vytvoria max 4 subory
         // (Rozuctovane / Nesparovane / Uzuhradene / Nerozuctovane) a poslu jednym emailom
-        private readonly List<string> _rozuctovaneBezChyby = new List<string>();
-        private readonly List<string> _nesparovane = new List<string>();
-        private readonly List<string> _uzUhradene = new List<string>();
-        private readonly List<string> _nerozuctovane = new List<string>();
+        private readonly SuhrnneZoznamyRozuctovania _suhrnneZoznamy = new SuhrnneZoznamyRozuctovania();
         // vynimky (s call stackom) zachytene pocas behu - na konci sa z nich sklada celkovy vysledok do .err suboru
         private readonly List<string> _chybyBehu = new List<string>();
 
@@ -155,13 +152,7 @@ namespace JurhanService_RozuctovanieDopravcov
         /// </summary>
         private void PosliLogSuboryRozuctovania()
         {
-            string datum = DateTime.Now.ToString("dd.MM.yyyy");
-            var prilohy = new List<string>();
-            ZapisSuhrnnySubor(prilohy, $"Rozuctovane {datum}.txt", "Rozúčtované bez chyby:", _rozuctovaneBezChyby);
-            ZapisSuhrnnySubor(prilohy, $"Nesparovane {datum}.txt", "Nespárované VS:", _nesparovane);
-            ZapisSuhrnnySubor(prilohy, $"Uzuhradene {datum}.txt", "Už uhradené VS:", _uzUhradene);
-            ZapisSuhrnnySubor(prilohy, $"Nerozuctovane {datum}.txt", "Nerozúčtované VS:", _nerozuctovane);
-
+            List<string> prilohy = _suhrnneZoznamy.ZapisSubory(ServicesLog.NameApplicationLogPath());
             if (!prilohy.Any())
             {
                 return;
@@ -181,33 +172,6 @@ namespace JurhanService_RozuctovanieDopravcov
             }
         }
 
-        /// <summary>Pridá do súhrnného zoznamu sekciu: názov dokladu a pod ním jeho položky.</summary>
-        private static void PridajSekciu(List<string> ciel, string identifikatorDokladu, List<string> riadky)
-        {
-            if (!riadky.Any())
-            {
-                return;
-            }
-            if (ciel.Any())
-            {
-                ciel.Add(string.Empty);
-            }
-            ciel.Add($"{identifikatorDokladu}:");
-            ciel.AddRange(riadky);
-        }
-
-        private static void ZapisSuhrnnySubor(List<string> prilohy, string nazovSuboru, string hlavicka, List<string> riadky)
-        {
-            if (!riadky.Any())
-            {
-                return;
-            }
-            string fileName = Path.Combine(ServicesLog.NameApplicationLogPath(), nazovSuboru);
-            File.WriteAllLines(fileName,
-                new[] { hlavicka, string.Empty }.Concat(riadky),
-                new System.Text.UTF8Encoding(true));
-            prilohy.Add(fileName);
-        }
 
         private void SpracujPriecinok(IMailFolder folder, eTypSuboru typSuboru)
         {
@@ -374,13 +338,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 {
                     File.Delete(filePath);
                 }
-                if (!string.IsNullOrEmpty(ctx.rozuctovaneBezChyby))
-                {
-                    _rozuctovaneBezChyby.Add(ctx.rozuctovaneBezChyby);
-                }
-                PridajSekciu(_nesparovane, ctx.identifikatorDokladu, ctx.nesparovaneVS);
-                PridajSekciu(_uzUhradene, ctx.identifikatorDokladu, ctx.uzUhradeneVS);
-                PridajSekciu(_nerozuctovane, ctx.identifikatorDokladu, ctx.nerozuctovaneVS);
+                _suhrnneZoznamy.PridajZKontextu(ctx);
             }
             return vysledok;
         }
