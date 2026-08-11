@@ -27,7 +27,13 @@ namespace JurhanService_RozuctovanieDopravcov
 
         // PILOT (skusobne nasadenie): v tychto priecinkoch sa robi ostre rozuctovanie (import do Omegy),
         // vo vsetkych ostatnych sa rozuctovanie iba simuluje a loguje, co by sa v ostrej prevadzke stalo.
-        private static readonly string[] _pilotnePriecinky = { "INBOX.Dopravcovia.DPD HR" };
+        private static readonly string[] _pilotnePriecinky = { 
+            "INBOX.Dopravcovia.DPD HR", 
+            "INBOX.Dopravcovia.DPD PL", 
+            "INBOX.Dopravcovia.DPD SI", 
+            "INBOX.Dopravcovia.DPD HU", 
+            "INBOX.Dopravcovia.DPD R0",
+            "INBOX.Dopravcovia.DPD SK" };
         // PILOT krok b (zapnut az pred nasadenim na server): v pilotnych priecinkoch sa emaily aj presuvaju
         // do podpriecinka "Zaúčtované"; kym je false, presun sa iba loguje.
         private const bool PresuvatVPilotnychPriecinkoch = true;
@@ -122,9 +128,11 @@ namespace JurhanService_RozuctovanieDopravcov
         /// </summary>
         private static List<string> AdresatiEmailov()
         {
-            return Program.typSpustenia == eTypSpustenia.Servica
-                ? new List<string> { Constants.MessageToObchodJurhan, Constants.MessageToTulejaX }
-                : new List<string> { Constants.MessageToTulejaX };
+            if (Program.typSpustenia == eTypSpustenia.Program)
+            {
+                return new List<string> { "tulejax@gmail.com" };
+            }
+            return new List<string> { Constants.MessageToPlatbyJurhan };
         }
 
         /// <summary>
@@ -282,8 +290,10 @@ namespace JurhanService_RozuctovanieDopravcov
                 eVysledokRozuctovania vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka, ibaSimulacia);
                 _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: {vysledok}.", true);
 
-                // duplicita = subor uz bol zauctovany skor -> email tiez patri do "Zaúčtované"
-                if (vysledok != eVysledokRozuctovania.Rozuctovane && vysledok != eVysledokRozuctovania.Duplicita)
+                // duplicita = subor uz bol zauctovany skor; vsetko uz uhradene = najdene faktury su uz
+                // zaplatene (Emag) -> email v oboch pripadoch patri do "Zaúčtované"
+                if (vysledok != eVysledokRozuctovania.Rozuctovane && vysledok != eVysledokRozuctovania.Duplicita
+                    && vysledok != eVysledokRozuctovania.VsetkoUzUhradene)
                 {
                     vsetkoZauctovane = false;
                 }
