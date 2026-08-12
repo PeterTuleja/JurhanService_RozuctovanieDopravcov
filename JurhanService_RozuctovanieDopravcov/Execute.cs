@@ -15,8 +15,7 @@ namespace JurhanService_RozuctovanieDopravcov
 
             SpustenieServicy spustenieServicy = new SpustenieServicy(_logger);
             spustenieServicy.Execute(Program.typSpustenia, eTypServisy.IbaProgram, 0, new List<short> { 0, 1, 2, 3, 4, 5, 6 }, 18, 18,
-                "Rozúčtovanie dopravcov",
-                new List<string> { Constants.MessageToTulejaX });
+                "Rozúčtovanie dopravcov", null);
         }
 
     }

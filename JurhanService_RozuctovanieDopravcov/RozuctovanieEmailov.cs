@@ -128,11 +128,9 @@ namespace JurhanService_RozuctovanieDopravcov
         /// </summary>
         private static List<string> AdresatiEmailov()
         {
-            if (Program.typSpustenia == eTypSpustenia.Program)
-            {
-                return new List<string> { "tulejax@gmail.com" };
-            }
-            return new List<string> { Constants.MessageToPlatbyJurhan };
+            return Program.typSpustenia == eTypSpustenia.Servica
+                ? new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToTulejaX }
+                : new List<string> { Constants.MessageToTulejaX };
         }
 
         /// <summary>
