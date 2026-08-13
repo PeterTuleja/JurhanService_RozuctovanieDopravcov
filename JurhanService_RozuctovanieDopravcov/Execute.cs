@@ -14,7 +14,7 @@ namespace JurhanService_RozuctovanieDopravcov
             ServicesLog.VytvorLogovaciAdresar();
 
             SpustenieServicy spustenieServicy = new SpustenieServicy(_logger);
-            spustenieServicy.Execute(Program.typSpustenia, eTypServisy.IbaProgram, 0, new List<short> { 0, 1, 2, 3, 4, 5, 6 }, 18, 18,
+            spustenieServicy.Execute(Program.typSpustenia, eTypServisy.IbaProgram, 0, new List<short> { 0, 1, 2, 3, 4, 5, 6 }, 13, 13,
                 "Rozúčtovanie dopravcov", null);
         }
 
