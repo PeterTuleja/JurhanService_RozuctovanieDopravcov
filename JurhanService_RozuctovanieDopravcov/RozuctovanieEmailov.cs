@@ -27,13 +27,21 @@ namespace JurhanService_RozuctovanieDopravcov
 
         // PILOT (skusobne nasadenie): v tychto priecinkoch sa robi ostre rozuctovanie (import do Omegy),
         // vo vsetkych ostatnych sa rozuctovanie iba simuluje a loguje, co by sa v ostrej prevadzke stalo.
-        private static readonly string[] _pilotnePriecinky = { 
-            "INBOX.Dopravcovia.DPD HR", 
-            "INBOX.Dopravcovia.DPD PL", 
-            "INBOX.Dopravcovia.DPD SI", 
-            "INBOX.Dopravcovia.DPD HU", 
-            "INBOX.Dopravcovia.DPD R0",
-            "INBOX.Dopravcovia.DPD SK" };
+        private static readonly string[] _pilotnePriecinky = {
+            "INBOX.Dopravcovia.DPD CZ",
+            "INBOX.Dopravcovia.DPD HR",
+            "INBOX.Dopravcovia.DPD PL",
+            "INBOX.Dopravcovia.DPD SI",
+            "INBOX.Dopravcovia.DPD HU",
+            "INBOX.Dopravcovia.DPD RO",
+            "INBOX.Dopravcovia.DPD SK",
+            "INBOX.Dopravcovia.GLS CZ",
+            "INBOX.Dopravcovia.GLS HU",
+            "INBOX.Dopravcovia.GLS PLN",
+            "INBOX.Dopravcovia.GLS RO",
+            "INBOX.Dopravcovia.PACKETA",
+            "INBOX.Dopravcovia.SPS",
+        };
         // PILOT krok b (zapnut az pred nasadenim na server): v pilotnych priecinkoch sa emaily aj presuvaju
         // do podpriecinka "Zaúčtované"; kym je false, presun sa iba loguje.
         private const bool PresuvatVPilotnychPriecinkoch = true;
@@ -46,6 +54,12 @@ namespace JurhanService_RozuctovanieDopravcov
         private readonly SuhrnneZoznamyRozuctovania _suhrnneZoznamy = new SuhrnneZoznamyRozuctovania();
         // vynimky (s call stackom) zachytene pocas behu - na konci sa z nich sklada celkovy vysledok do .err suboru
         private readonly List<string> _chybyBehu = new List<string>();
+        // nazvy priecinkov, ktore sme v schranke naozaj videli - na konci z nich zistime, ci sa niektory
+        // pilotny priecinok netrafil (preklep v nazve tichu vyradil DPD RO z pilotu a iba sa simulovalo)
+        private readonly HashSet<string> _videnePriecinky = new HashSet<string>();
+        // Omega nedokoncila import v limite - dalsie subory by na nu cakali rovnako dlho (pri desiatkach
+        // emailov aj hodinu), preto sa beh prerusi a nespracovane emaily ostanu na dalsi beh
+        private bool _importNedostupny;
 
         internal RozuctovanieEmailov(PripojeneFirmy pripojeneFirmy, RozuctovanieLogger logger)
         {
@@ -81,6 +95,11 @@ namespace JurhanService_RozuctovanieDopravcov
 
                 foreach (IMailFolder folder in folders)
                 {
+                    if (_importNedostupny)
+                    {
+                        break;
+                    }
+
                     //if (!string.IsNullOrEmpty(folder.ParentFolder?.FullName))
                     //{
                     //    // spracuvame len priecinky priamo pod korenom schranky (podpriecinky = "Zaúčtované" a pod.)
@@ -91,6 +110,8 @@ namespace JurhanService_RozuctovanieDopravcov
                     {
                         continue;
                     }
+
+                    _videnePriecinky.Add(folder.FullName);
 
                     eTypSuboru typSuboru = FolderMapping.DajTypSuboru(folder.Name);
                     if (typSuboru == eTypSuboru.Undefined)
@@ -115,6 +136,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 client.Disconnect(true);
             }
 
+            SkontrolujNazvyPilotnychPriecinkov();
             PosliLogSuboryRozuctovania();
             ZapisCelkovyVysledokDoErrSuboru();
 
@@ -129,8 +151,31 @@ namespace JurhanService_RozuctovanieDopravcov
         private static List<string> AdresatiEmailov()
         {
             return Program.typSpustenia == eTypSpustenia.Servica
-                ? new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToTulejaX }
+                ? new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToObchodJurhan,
+                    Constants.MessageToTulejaX }
                 : new List<string> { Constants.MessageToTulejaX };
+        }
+
+        /// <summary>
+        /// Pilotný priečinok, ktorý sa v schránke nenašiel, znamená preklep v <see cref="_pilotnePriecinky"/> -
+        /// taký priečinok sa potichu rozúčtováva iba nasucho. Radšej to nahlásime, ako aby to zas niekto objavil
+        /// až z toho, že doklady v Omege chýbajú.
+        /// </summary>
+        private void SkontrolujNazvyPilotnychPriecinkov()
+        {
+            if (_importNedostupny)
+            {
+                // beh sme prerušili, časť priečinkov sme ani nevideli - hlásenie by bolo falošné
+                return;
+            }
+
+            List<string> nenajdene = _pilotnePriecinky.Where(p => !_videnePriecinky.Contains(p)).ToList();
+            if (nenajdene.Any())
+            {
+                _logger.Loguj($"[PILOT] Tieto pilotné priečinky v schránke neexistujú - preklep v názve? " +
+                    $"{string.Join(", ", nenajdene)}", true);
+                _chybyBehu.Add($"Pilotné priečinky, ktoré sa v schránke nenašli: {string.Join(", ", nenajdene)}");
+            }
         }
 
         /// <summary>
@@ -202,6 +247,11 @@ namespace JurhanService_RozuctovanieDopravcov
             IMailFolder zauctovane = null;
             foreach (UniqueId uid in uids)
             {
+                if (_importNedostupny)
+                {
+                    break;
+                }
+
                 try
                 {
                     MimeMessage message = folder.GetMessage(uid);
@@ -256,6 +306,13 @@ namespace JurhanService_RozuctovanieDopravcov
 
             foreach (MimePart attachment in prilohy)
             {
+                if (_importNedostupny)
+                {
+                    // zvyšné prílohy tohto emailu sa už nespracovali - email nie je vybavený
+                    vsetkoZauctovane = false;
+                    break;
+                }
+
                 string pripona = Path.GetExtension(attachment.FileName);
                 if ((string.Equals(pripona, ".xlsx", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(pripona, ".xls", StringComparison.OrdinalIgnoreCase))
@@ -347,8 +404,29 @@ namespace JurhanService_RozuctovanieDopravcov
                     File.Delete(filePath);
                 }
                 _suhrnneZoznamy.PridajZKontextu(ctx);
+                if (ctx.importNedostupny)
+                {
+                    PrerusBeh();
+                }
             }
             return vysledok;
+        }
+
+        /// <summary>
+        /// Omega nedokončila import v limite. Každý ďalší súbor by na ňu čakal rovnako dlho, preto sa beh
+        /// ukončí; nespracované emaily ostávajú v priečinkoch a spracujú sa pri ďalšom behu.
+        /// </summary>
+        private void PrerusBeh()
+        {
+            if (_importNedostupny)
+            {
+                return;
+            }
+            _importNedostupny = true;
+            _logger.Loguj($"Import do Omegy nedobehol v limite - prerušujem beh. Zvyšné emaily ostávajú " +
+                $"nespracované v priečinkoch a spracujú sa pri ďalšom behu.", true);
+            _chybyBehu.Add("Import do Omegy nedobehol v limite - beh bol prerušený, " +
+                "zvyšné emaily ostali nespracované.");
         }
 
         /// <summary>
