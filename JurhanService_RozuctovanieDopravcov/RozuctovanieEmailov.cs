@@ -41,6 +41,7 @@ namespace JurhanService_RozuctovanieDopravcov
             "INBOX.Dopravcovia.GLS RO",
             "INBOX.Dopravcovia.PACKETA",
             "INBOX.Dopravcovia.SPS",
+            "INBOX.Ostatné .Platobné brány, Účty.GoPay",
         };
         // PILOT krok b (zapnut az pred nasadenim na server): v pilotnych priecinkoch sa emaily aj presuvaju
         // do podpriecinka "Zaúčtované"; kym je false, presun sa iba loguje.
@@ -60,6 +61,18 @@ namespace JurhanService_RozuctovanieDopravcov
         // Omega nedokoncila import v limite - dalsie subory by na nu cakali rovnako dlho (pri desiatkach
         // emailov aj hodinu), preto sa beh prerusi a nespracovane emaily ostanu na dalsi beh
         private bool _importNedostupny;
+        // dopravcovia (najma GLS CZ) posielaju ten isty report aj dvoma emailami; kluc je kontrolny sucet
+        // obsahu, aby sa duplicita chytila aj ked pride pod inym nazvom
+        private readonly Dictionary<string, SpracovanaPriloha> _spracovanePrilohy =
+            new Dictionary<string, SpracovanaPriloha>();
+        // bankove vypisy obsadene v tomto behu - na jeden vypis smie byt naparovany len jeden subor
+        private readonly HashSet<string> _pouziteBankoveDoklady = new HashSet<string>();
+
+        private class SpracovanaPriloha
+        {
+            internal string nazov;
+            internal eVysledokRozuctovania vysledok;
+        }
 
         internal RozuctovanieEmailov(PripojeneFirmy pripojeneFirmy, RozuctovanieLogger logger)
         {
@@ -73,6 +86,12 @@ namespace JurhanService_RozuctovanieDopravcov
             Directory.CreateDirectory(_workDir);
             ServicesLog.VytvorLogovaciAdresar();
             _logger.NacitajDataZoSuboru();
+
+            // vypisy, ktore uz maju rozuctovanie z minulych behov - na ten isty vypis sa druhy subor
+            // naparovat nesmie; nacitava sa raz za beh, dotaz ide cez celu evidenciu
+            _pouziteBankoveDoklady.UnionWith(RozuctovanieCore.NacitajPouziteBankoveDoklady(_pripojeneFirmy.dataProvider));
+            _logger.Loguj($"Bankových výpisov, ktoré už majú rozúčtovanie: {_pouziteBankoveDoklady.Count}.", true);
+
             try
             {
                 foreach (string f in Directory.GetFiles(_workDir))
@@ -340,10 +359,31 @@ namespace JurhanService_RozuctovanieDopravcov
                 }
 
                 asponJedenSubor = true;
-                _logger.Loguj($"Email '{message.Subject}': spracúvam súbor {Path.GetFileName(filePath)}.", true);
 
-                eVysledokRozuctovania vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka, ibaSimulacia);
-                _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: {vysledok}.", true);
+                eVysledokRozuctovania vysledok;
+                string odtlacok = DajOdtlacokSuboru(filePath);
+                if (_spracovanePrilohy.TryGetValue(odtlacok, out SpracovanaPriloha prva))
+                {
+                    // ten istý report druhý raz - rozúčtovanie by vytvorilo tie isté doklady ešte raz;
+                    // email dostane rovnaký osud ako prvý, aby sa presunuli obidva
+                    vysledok = prva.vysledok;
+                    _logger.Loguj($"Email '{message.Subject}': súbor {Path.GetFileName(filePath)} je totožný so súborom " +
+                        $"{prva.nazov}, ktorý už bol v tomto behu spracovaný - druhý raz ho nerozúčtovávam " +
+                        $"(výsledok preberám: {vysledok}).", true);
+                    _suhrnneZoznamy.PridajDuplicitnyReport(prva.nazov, Path.GetFileName(filePath), message.Subject);
+                    File.Delete(filePath);
+                }
+                else
+                {
+                    _logger.Loguj($"Email '{message.Subject}': spracúvam súbor {Path.GetFileName(filePath)}.", true);
+                    vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka, ibaSimulacia);
+                    _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: {vysledok}.", true);
+                    _spracovanePrilohy[odtlacok] = new SpracovanaPriloha
+                    {
+                        nazov = Path.GetFileName(filePath),
+                        vysledok = vysledok,
+                    };
+                }
 
                 // duplicita = subor uz bol zauctovany skor; vsetko uz uhradene = najdene faktury su uz
                 // zaplatene (Emag) -> email v oboch pripadoch patri do "Zaúčtované"
@@ -380,6 +420,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 interneCislo = null, // sluzba: doklad sa hlada podla textu hlavicky (C099) a datumu vypisu
                 nazovPriecinka = nazovPriecinka,
                 ibaSimulacia = ibaSimulacia, // pilot: mimo pilotnych priecinkov sa nic nezapisuje do Omegy
+                pouziteBankoveDoklady = _pouziteBankoveDoklady, // jeden bankovy vypis = jedno rozuctovanie
                 Loguj = s => _logger.Loguj(s, true), // kritéria hľadania dokladu do logu služby
                 PrazdnyRiadok = n => _logger.PrazdnyRiadok(n),
                 zobrazenieChyby = eZobrazenieChyby.ZapisDoSuboru,
@@ -439,6 +480,16 @@ namespace JurhanService_RozuctovanieDopravcov
             return new EudHlavickaRepository(_pripojeneFirmy.dataProvider)
                 .DajDoklady("C149_ImportText = @1 OR C149_ImportText = @2", nazov, "dopravca: " + nazov)
                 .Any();
+        }
+
+        /// <summary>Kontrolný súčet obsahu prílohy - dva emaily s tým istým reportom dajú rovnaký odtlačok.</summary>
+        private static string DajOdtlacokSuboru(string filePath)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (FileStream stream = File.OpenRead(filePath))
+            {
+                return BitConverter.ToString(sha.ComputeHash(stream));
+            }
         }
 
         private string UlozPrilohu(MimePart attachment)
