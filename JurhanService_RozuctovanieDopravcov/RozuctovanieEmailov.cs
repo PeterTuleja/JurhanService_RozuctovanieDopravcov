@@ -315,6 +315,14 @@ namespace JurhanService_RozuctovanieDopravcov
                 .Where(p => !string.IsNullOrEmpty(p.FileName))
                 .ToList();
 
+            // bez tohto riadku email bez prilohy zmizne z logu bez slova a nedá sa zistiť, prečo sa
+            // priečinok nerozúčtoval (PACKETA: 23 emailov a v logu iba hlavička priečinka)
+            if (!prilohy.Any())
+            {
+                _logger.Loguj($"Email '{message.Subject}': neobsahuje žiadnu prílohu s názvom súboru - preskakujem.", true);
+                return false;
+            }
+
             // niektori dopravcovia (napr. GoPay) posielaju ten isty vypis ako .csv aj .xlsx.
             // .xlsx sa nekonvertuje (nie je v PreConvertCsv) a CSV parser ho nespracuje (Chyba/MalformedLineException),
             // preto ak k rovnakemu nazvu existuje .csv, tabulkoveho dvojnika (.xlsx/.xls) preskakujeme.
@@ -355,6 +363,11 @@ namespace JurhanService_RozuctovanieDopravcov
                 string filePath = UlozPrilohu(attachment);
                 if (filePath == null)
                 {
+                    // nepodporovaná prípona - treba to vidieť v logu, inak sa nedá zistiť, v akej podobe
+                    // dopravca výpis posiela (napr. .zip alebo odkaz na stiahnutie namiesto prílohy)
+                    _logger.Loguj($"Email '{message.Subject}': prílohu {attachment.FileName} neviem spracovať " +
+                        $"(prípona {(string.IsNullOrEmpty(pripona) ? "žiadna" : pripona)}, podporované sú " +
+                        $"{string.Join(", ", _povolenePripony)}).", true);
                     continue;
                 }
 
