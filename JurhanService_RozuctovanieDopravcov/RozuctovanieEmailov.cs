@@ -167,12 +167,17 @@ namespace JurhanService_RozuctovanieDopravcov
         /// Adresati oboch emailov servisy (subory z rozuctovania aj logy sluzby):
         /// v mode servisa obchod aj Tuleja, v mode program iba Tuleja.
         /// </summary>
+        //private static List<string> AdresatiEmailov()
+        //{
+        //    return Program.typSpustenia == eTypSpustenia.Servica
+        //        ? new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToObchodJurhan,
+        //            Constants.MessageToTulejaX }
+        //        : new List<string> { Constants.MessageToTulejaX };
+        //}
+
         private static List<string> AdresatiEmailov()
         {
-            return Program.typSpustenia == eTypSpustenia.Servica
-                ? new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToObchodJurhan,
-                    Constants.MessageToTulejaX }
-                : new List<string> { Constants.MessageToTulejaX };
+            return new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToObchodJurhan, Constants.MessageToTulejaX };
         }
 
         /// <summary>
@@ -315,12 +320,25 @@ namespace JurhanService_RozuctovanieDopravcov
                 .Where(p => !string.IsNullOrEmpty(p.FileName))
                 .ToList();
 
-            // bez tohto riadku email bez prilohy zmizne z logu bez slova a nedá sa zistiť, prečo sa
-            // priečinok nerozúčtoval (PACKETA: 23 emailov a v logu iba hlavička priečinka)
             if (!prilohy.Any())
             {
-                _logger.Loguj($"Email '{message.Subject}': neobsahuje žiadnu prílohu s názvom súboru - preskakujem.", true);
-                return false;
+                // Packeta prílohu neposiela - výpis je za odkazom v tele emailu
+                List<string> zOdkazu = StiahniCsvZOdkazu(message, typSuboru);
+                if (!zOdkazu.Any())
+                {
+                    _logger.Loguj($"Email '{message.Subject}': neobsahuje žiadnu prílohu s názvom súboru - preskakujem.", true);
+                    return false;
+                }
+
+                foreach (string subor in zOdkazu)
+                {
+                    asponJedenSubor = true;
+                    if (!SpracujJedenSubor(subor, message, typSuboru, nazovPriecinka, ibaSimulacia))
+                    {
+                        vsetkoZauctovane = false;
+                    }
+                }
+                return vsetkoZauctovane;
             }
 
             // niektori dopravcovia (napr. GoPay) posielaju ten isty vypis ako .csv aj .xlsx.
@@ -372,42 +390,51 @@ namespace JurhanService_RozuctovanieDopravcov
                 }
 
                 asponJedenSubor = true;
-
-                eVysledokRozuctovania vysledok;
-                string odtlacok = DajOdtlacokSuboru(filePath);
-                if (_spracovanePrilohy.TryGetValue(odtlacok, out SpracovanaPriloha prva))
-                {
-                    // ten istý report druhý raz - rozúčtovanie by vytvorilo tie isté doklady ešte raz;
-                    // email dostane rovnaký osud ako prvý, aby sa presunuli obidva
-                    vysledok = prva.vysledok;
-                    _logger.Loguj($"Email '{message.Subject}': súbor {Path.GetFileName(filePath)} je totožný so súborom " +
-                        $"{prva.nazov}, ktorý už bol v tomto behu spracovaný - druhý raz ho nerozúčtovávam " +
-                        $"(výsledok preberám: {vysledok}).", true);
-                    _suhrnneZoznamy.PridajDuplicitnyReport(prva.nazov, Path.GetFileName(filePath), message.Subject);
-                    File.Delete(filePath);
-                }
-                else
-                {
-                    _logger.Loguj($"Email '{message.Subject}': spracúvam súbor {Path.GetFileName(filePath)}.", true);
-                    vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka, ibaSimulacia);
-                    _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: {vysledok}.", true);
-                    _spracovanePrilohy[odtlacok] = new SpracovanaPriloha
-                    {
-                        nazov = Path.GetFileName(filePath),
-                        vysledok = vysledok,
-                    };
-                }
-
-                // duplicita = subor uz bol zauctovany skor; vsetko uz uhradene = najdene faktury su uz
-                // zaplatene (Emag) -> email v oboch pripadoch patri do "Zaúčtované"
-                if (vysledok != eVysledokRozuctovania.Rozuctovane && vysledok != eVysledokRozuctovania.Duplicita
-                    && vysledok != eVysledokRozuctovania.VsetkoUzUhradene)
+                if (!SpracujJedenSubor(filePath, message, typSuboru, nazovPriecinka, ibaSimulacia))
                 {
                     vsetkoZauctovane = false;
                 }
             }
 
             return asponJedenSubor && vsetkoZauctovane;
+        }
+
+        /// <summary>
+        /// Rozúčtuje jeden súbor - z prílohy alebo stiahnutý z odkazu v tele emailu.
+        /// </summary>
+        /// <returns>true, ak sa súbor počíta ako vybavený (email môže ísť do "Zaúčtované")</returns>
+        private bool SpracujJedenSubor(string filePath, MimeMessage message, eTypSuboru typSuboru,
+            string nazovPriecinka, bool ibaSimulacia)
+        {
+            eVysledokRozuctovania vysledok;
+            string odtlacok = DajOdtlacokSuboru(filePath);
+            if (_spracovanePrilohy.TryGetValue(odtlacok, out SpracovanaPriloha prva))
+            {
+                // ten istý report druhý raz - rozúčtovanie by vytvorilo tie isté doklady ešte raz;
+                // email dostane rovnaký osud ako prvý, aby sa presunuli obidva
+                vysledok = prva.vysledok;
+                _logger.Loguj($"Email '{message.Subject}': súbor {Path.GetFileName(filePath)} je totožný so súborom " +
+                    $"{prva.nazov}, ktorý už bol v tomto behu spracovaný - druhý raz ho nerozúčtovávam " +
+                    $"(výsledok preberám: {vysledok}).", true);
+                _suhrnneZoznamy.PridajDuplicitnyReport(prva.nazov, Path.GetFileName(filePath), message.Subject);
+                File.Delete(filePath);
+            }
+            else
+            {
+                _logger.Loguj($"Email '{message.Subject}': spracúvam súbor {Path.GetFileName(filePath)}.", true);
+                vysledok = SpracujSubor(filePath, typSuboru, nazovPriecinka, ibaSimulacia);
+                _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: {vysledok}.", true);
+                _spracovanePrilohy[odtlacok] = new SpracovanaPriloha
+                {
+                    nazov = Path.GetFileName(filePath),
+                    vysledok = vysledok,
+                };
+            }
+
+            // duplicita = subor uz bol zauctovany skor; vsetko uz uhradene = najdene faktury su uz
+            // zaplatene (Emag) -> email v oboch pripadoch patri do "Zaúčtované"
+            return vysledok == eVysledokRozuctovania.Rozuctovane || vysledok == eVysledokRozuctovania.Duplicita
+                || vysledok == eVysledokRozuctovania.VsetkoUzUhradene;
         }
 
         private eVysledokRozuctovania SpracujSubor(string filePath, eTypSuboru typSuboru, string nazovPriecinka, bool ibaSimulacia)
@@ -493,6 +520,101 @@ namespace JurhanService_RozuctovanieDopravcov
             return new EudHlavickaRepository(_pripojeneFirmy.dataProvider)
                 .DajDoklady("C149_ImportText = @1 OR C149_ImportText = @2", nazov, "dopravca: " + nazov)
                 .Any();
+        }
+
+        // Packeta: v tele emailu su odkazy na CSV vo verziach v2..v9. Berieme len tuto adresu - nikdy nie
+        // lubovolny odkaz z lubovolneho emailu. Pouzitelna je najvyssia verzia, ktorej hlavicka obsahuje
+        // vsetky potrebne stlpce (dnes v9, jedina s datumom odoslania dobierok).
+        private static readonly System.Text.RegularExpressions.Regex _odkazPacketa =
+            new System.Text.RegularExpressions.Regex(
+                @"https://www\.zasielkovna\.sk/api/v(?<verzia>\d+)/invoice-packet\.csv\?[^""'\s<>]+",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        private static readonly System.Net.Http.HttpClient _httpClient =
+            new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+
+        /// <summary>
+        /// Packeta neposiela prílohu, ale odkazy na CSV. Stiahne najvyššiu verziu s použiteľnou hlavičkou
+        /// a rozdelí ju na jeden súbor za každý prevod (dátum výplaty + mena).
+        /// </summary>
+        /// <returns>cesty k rozdeleným súborom; prázdny zoznam keď email odkaz nemá alebo sa nedá použiť</returns>
+        private List<string> StiahniCsvZOdkazu(MimeMessage message, eTypSuboru typSuboru)
+        {
+            var vysledok = new List<string>();
+            if (typSuboru != eTypSuboru.Dopravca_Packeta || string.IsNullOrEmpty(message.HtmlBody))
+            {
+                return vysledok;
+            }
+
+            // od najvyssej verzie - nizsie nemaju datum odoslania dobierok
+            var odkazy = _odkazPacketa.Matches(message.HtmlBody).Cast<System.Text.RegularExpressions.Match>()
+                .Select(m => new { url = m.Value.Replace("&amp;", "&"), verzia = int.Parse(m.Groups["verzia"].Value) })
+                .OrderByDescending(o => o.verzia)
+                .ToList();
+            if (!odkazy.Any())
+            {
+                return vysledok;
+            }
+
+            string cislo = DajCisloFakturyPacketa(message.HtmlBody);
+            foreach (var odkaz in odkazy)
+            {
+                string subor = Path.Combine(_workDir, $"Packeta_{cislo}_v{odkaz.verzia}.csv");
+                if (!StiahniSubor(odkaz.url, subor, message.Subject))
+                {
+                    continue;
+                }
+
+                string chybajuce = PacketaCsv.ChybajuceStlpce(subor);
+                if (chybajuce != null)
+                {
+                    _logger.Loguj($"Email '{message.Subject}': CSV verzia v{odkaz.verzia} sa použiť nedá " +
+                        $"(chýbajú stĺpce: {chybajuce}) - skúšam nižšiu verziu.", true);
+                    File.Delete(subor);
+                    continue;
+                }
+
+                _logger.Loguj($"Email '{message.Subject}': výpis stiahnutý z odkazu (CSV verzia v{odkaz.verzia}).", true);
+                vysledok.AddRange(PacketaCsv.RozdelPodlaVyplat(subor, _workDir, s => _logger.Loguj(s, true)));
+                File.Delete(subor);   // rozúčtovávajú sa rozdelené súbory, originál netreba
+                break;
+            }
+
+            return vysledok;
+        }
+
+        private bool StiahniSubor(string url, string cielovySubor, string predmetEmailu)
+        {
+            try
+            {
+                using (var odpoved = _httpClient.GetAsync(url).GetAwaiter().GetResult())
+                {
+                    if (!odpoved.IsSuccessStatusCode)
+                    {
+                        _logger.Loguj($"Email '{predmetEmailu}': stiahnutie výpisu zlyhalo " +
+                            $"({(int)odpoved.StatusCode} {odpoved.ReasonPhrase}).", true);
+                        return false;
+                    }
+                    File.WriteAllBytes(cielovySubor, odpoved.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Loguj($"Email '{predmetEmailu}': stiahnutie výpisu zlyhalo: {ex.Message}", true);
+                _chybyBehu.Add($"Stiahnutie výpisu z odkazu ({url}): {ex}");
+                return false;
+            }
+        }
+
+        /// <summary>Číslo faktúry z tela emailu - do názvu súboru, aby bol kľúč rozúčtovania stabilný.</summary>
+        private static string DajCisloFakturyPacketa(string htmlBody)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(htmlBody, @"qrpay/(?<cislo>\d+)\.png");
+            if (!m.Success)
+            {
+                m = System.Text.RegularExpressions.Regex.Match(htmlBody, @"(?:číslo|Variabiln\w+ symbol:)\s*(?<cislo>\d{6,})");
+            }
+            return m.Success ? m.Groups["cislo"].Value : DateTime.Now.ToString("yyyyMMddHHmmss");
         }
 
         /// <summary>Kontrolný súčet obsahu prílohy - dva emaily s tým istým reportom dajú rovnaký odtlačok.</summary>
