@@ -175,19 +175,18 @@ namespace JurhanService_RozuctovanieDopravcov
 
         /// <summary>
         /// Adresati oboch emailov servisy (subory z rozuctovania aj logy sluzby):
-        /// v mode servisa obchod aj Tuleja, v mode program iba Tuleja.
+        /// v mode servisa platby, obchod aj Tuleja; v mode program (rucne testovacie behy)
+        /// platby a Tuleja - obchod testovacimi emailami nezatazujeme.
+        /// Pozor: ServicesLogger posiela User log na adresy BEZ tulejax - zoznam iba [tulejax]
+        /// by znamenal, ze User log sa nikam neposle (presne to sa dialo pri povodnom rozliseni,
+        /// ktore v mode program vracalo iba tulejax).
         /// </summary>
-        //private static List<string> AdresatiEmailov()
-        //{
-        //    return Program.typSpustenia == eTypSpustenia.Servica
-        //        ? new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToObchodJurhan,
-        //            Constants.MessageToTulejaX }
-        //        : new List<string> { Constants.MessageToTulejaX };
-        //}
-
         private static List<string> AdresatiEmailov()
         {
-            return new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToObchodJurhan, Constants.MessageToTulejaX };
+            return Program.typSpustenia == eTypSpustenia.Servica
+                ? new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToObchodJurhan,
+                    Constants.MessageToTulejaX }
+                : new List<string> { Constants.MessageToPlatbyJurhan, Constants.MessageToTulejaX };
         }
 
         /// <summary>
