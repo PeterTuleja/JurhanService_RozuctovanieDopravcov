@@ -67,11 +67,21 @@ namespace JurhanService_RozuctovanieDopravcov
             new Dictionary<string, SpracovanaPriloha>();
         // bankove vypisy obsadene v tomto behu - na jeden vypis smie byt naparovany len jeden subor
         private readonly HashSet<string> _pouziteBankoveDoklady = new HashSet<string>();
+        // GoPay: prevod vyrovnavajuci vypis N je az vo vypise N+1 - prevody z celeho priecinka sa
+        // pozbieraju vopred (NacitajPrevodyGopay), aby bol pri spracovani suboru N jeho prevod znamy
+        private readonly List<PrevodGopayVypisu> _prevodyGopay = new List<PrevodGopayVypisu>();
 
         private class SpracovanaPriloha
         {
             internal string nazov;
             internal eVysledokRozuctovania vysledok;
+        }
+
+        private class PrevodGopayVypisu
+        {
+            internal string ucet;
+            internal DateTime obdobieOd;
+            internal GopayCsv.Prevod prevod;
         }
 
         internal RozuctovanieEmailov(PripojeneFirmy pripojeneFirmy, RozuctovanieLogger logger)
@@ -268,6 +278,13 @@ namespace JurhanService_RozuctovanieDopravcov
             }
             _logger.PrazdnyRiadok(1);
 
+            if (typSuboru == eTypSuboru.PlatobnaBrana_Gopay)
+            {
+                // prevod k výpisu N je až vo výpise N+1 - najprv sa z celého priečinka pozbierajú
+                // prevody, aby bol pri spracovaní súboru N jeho prevod už známy
+                NacitajPrevodyGopay(folder, uids);
+            }
+
             IMailFolder zauctovane = null;
             foreach (UniqueId uid in uids)
             {
@@ -400,6 +417,66 @@ namespace JurhanService_RozuctovanieDopravcov
         }
 
         /// <summary>
+        /// Pozbiera prevody "GOPAY-vyuctovani" zo všetkých CSV výpisov v priečinku. Prílohy sa kvôli tomu
+        /// sťahujú dvakrát (raz sem, raz pri spracovaní) - pri desiatkach emailov je to prijateľná cena
+        /// za to, že spracovanie súborov ostáva jednoduché a nezávislé od poradia emailov.
+        /// </summary>
+        private void NacitajPrevodyGopay(IMailFolder folder, IList<UniqueId> uids)
+        {
+            _prevodyGopay.Clear();
+            foreach (UniqueId uid in uids)
+            {
+                try
+                {
+                    MimeMessage message = folder.GetMessage(uid);
+                    foreach (MimePart priloha in message.BodyParts.OfType<MimePart>()
+                        .Where(p => string.Equals(Path.GetExtension(p.FileName), ".csv", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        if (!GopayCsv.SkusRozobratNazov(priloha.FileName, out string ucet, out DateTime od, out DateTime _))
+                        {
+                            continue;
+                        }
+
+                        string subor = UlozPrilohu(priloha);
+                        if (subor == null)
+                        {
+                            continue;
+                        }
+                        GopayCsv.Prevod prevod = GopayCsv.DajPrevod(subor);
+                        File.Delete(subor);
+                        if (prevod != null
+                            && !_prevodyGopay.Any(p => p.ucet == ucet && p.obdobieOd == od))
+                        {
+                            _prevodyGopay.Add(new PrevodGopayVypisu { ucet = ucet, obdobieOd = od, prevod = prevod });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Loguj($"Chyba pri zbieraní prevodov GoPay z emailu {uid}: {ex}", true);
+                    _chybyBehu.Add($"Zbieranie prevodov GoPay, email {uid}: {ex}");
+                }
+            }
+            _logger.Loguj($"GoPay: pozbieraných {_prevodyGopay.Count} prevodov z výpisov v priečinku " +
+                $"(prevod k výpisu N je až vo výpise N+1).", true);
+        }
+
+        /// <summary>
+        /// Prevod vyrovnávajúci platby zadaného výpisu - z výpisu, ktorého obdobie začína deň po konci
+        /// tohto. Null, keď nasledujúci výpis ešte neprišiel (najnovší týždeň).
+        /// </summary>
+        private GopayCsv.Prevod DajPrevodZNasledujucehoVypisu(string fileName)
+        {
+            if (!GopayCsv.SkusRozobratNazov(fileName, out string ucet, out DateTime _, out DateTime obdobieDo))
+            {
+                return null;
+            }
+            return _prevodyGopay
+                .FirstOrDefault(p => p.ucet == ucet && GopayCsv.JeNasledujuceObdobie(obdobieDo, p.obdobieOd))
+                ?.prevod;
+        }
+
+        /// <summary>
         /// Rozúčtuje jeden súbor - z prílohy alebo stiahnutý z odkazu v tele emailu.
         /// </summary>
         /// <returns>true, ak sa súbor počíta ako vybavený (email môže ísť do "Zaúčtované")</returns>
@@ -451,12 +528,25 @@ namespace JurhanService_RozuctovanieDopravcov
                 mesiac = (short)DateTime.Now.Month;
             }
 
+            // GoPay: prevod vyrovnavajuci tento vypis je az v NASLEDUJUCOM tyzdennom vypise -
+            // datum a suma sa dosadia z neho; ak este nepriisiel, jadro subor odlozi na dalsi beh
+            GopayCsv.Prevod prevodGopay = typSuboru == eTypSuboru.PlatobnaBrana_Gopay
+                ? DajPrevodZNasledujucehoVypisu(filePath)
+                : null;
+            if (prevodGopay != null)
+            {
+                _logger.Loguj($"Súbor {Path.GetFileName(filePath)}: prevod z nasledujúceho výpisu " +
+                    $"{prevodGopay.suma:0.00} z {prevodGopay.datum:dd.MM.yyyy}.", true);
+            }
+
             RozuctovanieContext ctx = new RozuctovanieContext
             {
                 pripojeneFirmy = _pripojeneFirmy,
                 typSuboru = typSuboru,
                 fileName = filePath,
                 mesiac = mesiac,
+                datumVypisu = prevodGopay?.datum,
+                sumaPrevodu = prevodGopay?.suma,
                 interneCislo = null, // sluzba: doklad sa hlada podla textu hlavicky (C099) a datumu vypisu
                 nazovPriecinka = nazovPriecinka,
                 ibaSimulacia = ibaSimulacia, // pilot: mimo pilotnych priecinkov sa nic nezapisuje do Omegy
