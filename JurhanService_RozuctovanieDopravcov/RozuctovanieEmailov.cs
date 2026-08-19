@@ -41,7 +41,11 @@ namespace JurhanService_RozuctovanieDopravcov
             "INBOX.Dopravcovia.GLS RO",
             "INBOX.Dopravcovia.PACKETA",
             "INBOX.Dopravcovia.SPS",
-            "INBOX.Ostatné .Platobné brány, Účty.GoPay",
+            // GoPay VYPNUTY na ziadost zakaznika (18.08.2026): server bezal so starymi binarkami
+            // (parovanie na prevod z vlastneho vypisu namiesto vypisu N+1) a zauctoval zle doklady.
+            // Zapnut az ked server preukazatelne bezi s kodom N+1 - v logu musi byt riadok
+            // "GoPay: pozbieranych X prevodov z vypisov v priecinku".
+            //"INBOX.Ostatné .Platobné brány, Účty.GoPay",
         };
         // PILOT krok b (zapnut az pred nasadenim na server): v pilotnych priecinkoch sa emaily aj presuvaju
         // do podpriecinka "Zaúčtované"; kym je false, presun sa iba loguje.
@@ -153,7 +157,8 @@ namespace JurhanService_RozuctovanieDopravcov
 
                     try
                     {
-                        SpracujPriecinok(folder, typSuboru);
+                       SpracujPriecinok(folder, typSuboru);
+                       
                     }
                     catch (Exception ex)
                     {
@@ -295,7 +300,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 try
                 {
                     MimeMessage message = folder.GetMessage(uid);
-                    if (SpracujEmail(message, typSuboru, folder.Name, ibaSimulacia: !pilotny))
+                    if (SpracujEmail(message, typSuboru, folder.Name, !PresuvatVPilotnychPriecinkoch))
                     {
                         if (pilotny && PresuvatVPilotnychPriecinkoch)
                         {
@@ -492,7 +497,8 @@ namespace JurhanService_RozuctovanieDopravcov
                 _logger.Loguj($"Email '{message.Subject}': súbor {Path.GetFileName(filePath)} je totožný so súborom " +
                     $"{prva.nazov}, ktorý už bol v tomto behu spracovaný - druhý raz ho nerozúčtovávam " +
                     $"(výsledok preberám: {vysledok}).", true);
-                _suhrnneZoznamy.PridajDuplicitnyReport(prva.nazov, Path.GetFileName(filePath), message.Subject);
+                _suhrnneZoznamy.PridajDuplicitnyReport(nazovPriecinka, message.Date.LocalDateTime,
+                    prva.nazov, Path.GetFileName(filePath), message.Subject);
                 File.Delete(filePath);
             }
             else
