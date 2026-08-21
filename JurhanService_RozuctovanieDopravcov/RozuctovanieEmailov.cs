@@ -47,9 +47,11 @@ namespace JurhanService_RozuctovanieDopravcov
             // "GoPay: pozbieranych X prevodov z vypisov v priecinku".
             //"INBOX.Ostatné .Platobné brány, Účty.GoPay",
         };
-        // PILOT krok b (zapnut az pred nasadenim na server): v pilotnych priecinkoch sa emaily aj presuvaju
-        // do podpriecinka "Zaúčtované"; kym je false, presun sa iba loguje.
-        private const bool PresuvatVPilotnychPriecinkoch = true;
+        // Testovaci rezim (lokalne spustenie nad kopiou databazy). Ked je true, VSETKO sa iba
+        // simuluje - nepresuvaju sa emaily a nevola sa autoimport do Omegy (kvoli rychlosti
+        // testovania). Na serveri musi byt false: pilotne priecinky vtedy ostro importuju
+        // a presuvaju emaily, priecinky mimo pilotu simuluju vzdy.
+        private const bool IbaSimulacia = false;
 
         private readonly PripojeneFirmy _pripojeneFirmy;
         private readonly string _workDir;
@@ -300,9 +302,14 @@ namespace JurhanService_RozuctovanieDopravcov
                 try
                 {
                     MimeMessage message = folder.GetMessage(uid);
-                    if (SpracujEmail(message, typSuboru, folder.Name, !PresuvatVPilotnychPriecinkoch))
+                    // simuluje sa, ked priecinok nie je v pilote ALEBO bezi testovaci rezim.
+                    // Podmienka MUSI obsahovat !pilotny - bez nej by na serveri ostro importovali
+                    // aj priecinky mimo pilotu (21.08. tak GLS SK realne importoval a GoPay by sa
+                    // zauctoval napriek vypnutiu na ziadost zakaznika).
+                    if (SpracujEmail(message, typSuboru, folder.Name,
+                        ibaSimulacia: !pilotny || IbaSimulacia))
                     {
-                        if (pilotny && PresuvatVPilotnychPriecinkoch)
+                        if (pilotny && !IbaSimulacia)
                         {
                             if (zauctovane == null)
                             {
@@ -318,7 +325,7 @@ namespace JurhanService_RozuctovanieDopravcov
                         {
                             _logger.Loguj($"[PILOT] Email '{message.Subject}' by bol presunutý do " +
                                 $"'{folder.FullName}.{NazovPodpriecinkaZauctovane}'" +
-                                (pilotny ? " (presun v pilote zatiaľ vypnutý)." : " (priečinok mimo pilotu)."), true);
+                                (pilotny ? " (testovací režim - nepresúvam)." : " (priečinok mimo pilotu)."), true);
                         }
                     }
                 }
