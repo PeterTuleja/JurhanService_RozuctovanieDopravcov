@@ -36,16 +36,17 @@ namespace JurhanService_RozuctovanieDopravcov
             "INBOX.Dopravcovia.DPD RO",
             "INBOX.Dopravcovia.DPD SK",
             "INBOX.Dopravcovia.GLS CZ",
+            "INBOX.Dopravcovia.GLS HR",
             "INBOX.Dopravcovia.GLS HU",
             "INBOX.Dopravcovia.GLS PLN",
             "INBOX.Dopravcovia.GLS RO",
+            "INBOX.Dopravcovia.GLS SI",
+            "INBOX.Dopravcovia.GLS SK",
             "INBOX.Dopravcovia.PACKETA",
             "INBOX.Dopravcovia.SPS",
-            // GoPay VYPNUTY na ziadost zakaznika (18.08.2026): server bezal so starymi binarkami
-            // (parovanie na prevod z vlastneho vypisu namiesto vypisu N+1) a zauctoval zle doklady.
-            // Zapnut az ked server preukazatelne bezi s kodom N+1 - v logu musi byt riadok
-            // "GoPay: pozbieranych X prevodov z vypisov v priecinku".
-            //"INBOX.Ostatné .Platobné brány, Účty.GoPay",
+            // GoPay zapnuty spat 22.08.2026 - server uz preukazatelne bezi s parovanim N+1
+            // (v logu 19.08. je riadok "GoPay: pozbieranych X prevodov z vypisov v priecinku")
+            "INBOX.Ostatné .Platobné brány, Účty.GoPay",
         };
         // Testovaci rezim (lokalne spustenie nad kopiou databazy). Ked je true, VSETKO sa iba
         // simuluje - nepresuvaju sa emaily a nevola sa autoimport do Omegy (kvoli rychlosti
