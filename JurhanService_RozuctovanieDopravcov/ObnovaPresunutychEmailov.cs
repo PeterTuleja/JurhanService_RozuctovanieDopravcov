@@ -1,4 +1,5 @@
 using JurhanLib.Import;
+using JurhanLib.Logger;
 using MailKit;
 using MailKit.Net.Imap;
 using MailKit.Search;
@@ -60,7 +61,7 @@ namespace JurhanService_RozuctovanieDopravcov
                     }
                     catch (Exception ex)
                     {
-                        _logger.Loguj($"Obnova: chyba pri priečinku '{par.Key}': {ex}", true);
+                        _logger.Loguj($"Obnova: chyba pri priečinku '{par.Key}': {ex}", true, FarbyLogu.Chyba);
                     }
                 }
 
@@ -75,7 +76,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 .FirstOrDefault(f => f.Name == NazovPodpriecinkaZauctovane);
             if (zauctovane == null)
             {
-                _logger.Loguj($"Obnova: podpriečinok '{NazovPodpriecinkaZauctovane}' v '{rodicFullName}' neexistuje - preskakujem.", true);
+                _logger.Loguj($"Obnova: podpriečinok '{NazovPodpriecinkaZauctovane}' v '{rodicFullName}' neexistuje - preskakujem.", true, FarbyLogu.Chyba);
                 return;
             }
 
@@ -92,7 +93,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 {
                     zauctovane.MoveTo(uid, rodic);
                     vratene.Add(sprava.Subject);
-                    _logger.Loguj($"Obnova: email '{sprava.Subject}' vrátený z '{zauctovane.FullName}' do '{rodicFullName}'.", true);
+                    _logger.Loguj($"Obnova: email '{sprava.Subject}' vrátený z '{zauctovane.FullName}' do '{rodicFullName}'.", true, FarbyLogu.Uspech);
                 }
             }
 
@@ -100,7 +101,7 @@ namespace JurhanService_RozuctovanieDopravcov
             {
                 if (!vratene.Contains(predmet))
                 {
-                    _logger.Loguj($"Obnova: email s predmetom '{predmet}' sa v '{zauctovane.FullName}' nenašiel.", true);
+                    _logger.Loguj($"Obnova: email s predmetom '{predmet}' sa v '{zauctovane.FullName}' nenašiel.", true, FarbyLogu.Chyba);
                 }
             }
         }

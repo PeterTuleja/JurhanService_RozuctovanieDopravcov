@@ -1,4 +1,5 @@
 using DataProvider;
+using JurhanLib.Logger;
 using OmegaLib.Enums;
 using OmegaLib.Models;
 using OmegaLib.Repository;
@@ -40,23 +41,23 @@ namespace JurhanService_RozuctovanieDopravcov
             EudHlavickaRepository hlavickaRepo = new EudHlavickaRepository(dp);
             EudPolozkaRepository polozkaRepo = new EudPolozkaRepository(dp);
 
-            _logger.Loguj($"Oprava kurzu rozúčtovania — {(_dryRun ? "DRY-RUN (bez zápisu do DB)" : "OSTRÝ ZÁPIS do DB")}.", true);
+            _logger.Loguj($"Oprava kurzu rozúčtovania — {(_dryRun ? "DRY-RUN (bez zápisu do DB)" : "OSTRÝ ZÁPIS do DB")}.", true, FarbyLogu.Hlavicka);
 
             // položky s účtom 261: banka na strane DAL, interný doklad na strane MáDať
             List<EUDPolozka> polozkyVypis = polozkaRepo.GetItems("C108_DALSyntetickyUcet = @1", SyntetikaPeniazeNaCeste).ToList();
             List<EUDPolozka> polozkyInterny = polozkaRepo.GetItems("C106_MDSyntetickyUcet = @1", SyntetikaPeniazeNaCeste).ToList();
-            _logger.Loguj($"Diagnostika: položiek s účtom {SyntetikaPeniazeNaCeste} na DAL = {polozkyVypis.Count}, na MáDať = {polozkyInterny.Count}.", true);
+            _logger.Loguj($"Diagnostika: položiek s účtom {SyntetikaPeniazeNaCeste} na DAL = {polozkyVypis.Count}, na MáDať = {polozkyInterny.Count}.", true, FarbyLogu.Hlavicka);
 
             // všetky hlavičky s účtom 261 (bez filtra okruhu) — diagnostika, aké okruhy tie doklady majú
             Dictionary<int, EUDHlavicka> vsetkyVypis = NacitajHlavicky(hlavickaRepo, polozkyVypis.Select(p => p.IdEUD));
             Dictionary<int, EUDHlavicka> vsetkyInterny = NacitajHlavicky(hlavickaRepo, polozkyInterny.Select(p => p.IdEUD));
             _logger.Loguj($"Diagnostika: okruhy dokladov s 261 na DAL: [{OkruhyHistogram(vsetkyVypis.Values)}]; " +
-                $"na MáDať: [{OkruhyHistogram(vsetkyInterny.Values)}].", true);
+                $"na MáDať: [{OkruhyHistogram(vsetkyInterny.Values)}].", true, FarbyLogu.Hlavicka);
 
             // hlavičky obmedzené na správne okruhy (výpisy BV/zBV, interné ID/zID)
             Dictionary<int, EUDHlavicka> vypisy = FiltrujOkruh(vsetkyVypis, (short)eTYP_OKRUH.BV, (short)eTYP_OKRUH.zBV);
             Dictionary<int, EUDHlavicka> interne = FiltrujOkruh(vsetkyInterny, (short)eTYP_OKRUH.ID, (short)eTYP_OKRUH.zID);
-            _logger.Loguj($"Diagnostika: bankových výpisov (BV/zBV) = {vypisy.Count}, interných dokladov (ID/zID) = {interne.Count}.", true);
+            _logger.Loguj($"Diagnostika: bankových výpisov (BV/zBV) = {vypisy.Count}, interných dokladov (ID/zID) = {interne.Count}.", true, FarbyLogu.Hlavicka);
 
             // analytika účtu 261 pre každý doklad (z príslušnej položky)
             Dictionary<int, string> vypisAnalytika = polozkyVypis
@@ -86,7 +87,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 if (nejednoznacne.Contains(kluc))
                 {
                     _logger.Loguj($"Oprava kurzu: interný doklad '{i.CisloInterne}' (id {i.Id}) — účet {SyntetikaPeniazeNaCeste}{anal}, " +
-                        $"suma {i.SumaSpoluZahranicnaMena:0.00}: viac bankových výpisov s rovnakým kľúčom, preskakujem (nejednoznačné).", true);
+                        $"suma {i.SumaSpoluZahranicnaMena:0.00}: viac bankových výpisov s rovnakým kľúčom, preskakujem (nejednoznačné).", true, FarbyLogu.Hlavicka);
                     nejedn++;
                     continue;
                 }
@@ -111,7 +112,7 @@ namespace JurhanService_RozuctovanieDopravcov
             }
 
             _logger.Loguj($"Oprava kurzu — na opravu: {opravene}, už OK: {uzOk}, bez zhody výpisu: {bezVypisu}, nejednoznačných: {nejedn}. " +
-                $"{(_dryRun ? "Nič sa nezapísalo (dry-run)." : "Zmeny zapísané do DB.")}", true);
+                $"{(_dryRun ? "Nič sa nezapísalo (dry-run)." : "Zmeny zapísané do DB.")}", true, FarbyLogu.Hlavicka);
 
             _logger.ZapisDataDoLogSuboru(); // zapíš .log súbor (utilita beží mimo bežného behu služby)
         }

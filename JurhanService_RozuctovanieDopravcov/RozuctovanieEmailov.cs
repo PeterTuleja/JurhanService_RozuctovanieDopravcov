@@ -1,6 +1,7 @@
 using JurhanLib.Email;
 using JurhanLib.Import;
 using JurhanLib.Import.Dopravcovia;
+using JurhanLib.Logger;
 using JurhanModels.Enum;
 using JurhanModels.Import;
 using MailKit;
@@ -118,7 +119,7 @@ namespace JurhanService_RozuctovanieDopravcov
             }
             catch (Exception ex)
             {
-                _logger.Loguj($"Nepodarilo sa vyčistiť pracovný adresár '{_workDir}': {ex}", true);
+                _logger.Loguj($"Nepodarilo sa vyčistiť pracovný adresár '{_workDir}': {ex}", true, FarbyLogu.Chyba);
                 _chybyBehu.Add($"Pracovný adresár '{_workDir}': {ex}");
             }
 
@@ -153,7 +154,7 @@ namespace JurhanService_RozuctovanieDopravcov
                     if (typSuboru == eTypSuboru.Undefined)
                     {
                         _logger.PrazdnyRiadok(1);
-                        _logger.Loguj($"Priečinok '{folder.FullName}' nie je namapovaný na typ dopravcu - preskakujem.", true);
+                        _logger.Loguj($"Priečinok '{folder.FullName}' nie je namapovaný na typ dopravcu - preskakujem.", true, FarbyLogu.Priecinok);
                         _logger.PrazdnyRiadok(1);
                         continue;
                     }
@@ -165,7 +166,7 @@ namespace JurhanService_RozuctovanieDopravcov
                     }
                     catch (Exception ex)
                     {
-                        _logger.Loguj($"Chyba pri spracovaní priečinka '{folder.FullName}': {ex}", true);
+                        _logger.Loguj($"Chyba pri spracovaní priečinka '{folder.FullName}': {ex}", true, FarbyLogu.Chyba);
                         _chybyBehu.Add($"Priečinok '{folder.FullName}': {ex}");
                     }
                 }
@@ -260,7 +261,7 @@ namespace JurhanService_RozuctovanieDopravcov
             if (!odoslane)
             {
                 _logger.Loguj($"Nepodarilo sa odoslať email so súbormi z rozúčtovania " +
-                    $"({string.Join(", ", prilohy.Select(Path.GetFileName))}).", true);
+                    $"({string.Join(", ", prilohy.Select(Path.GetFileName))}).", true, FarbyLogu.Chyba);
             }
         }
 
@@ -278,7 +279,7 @@ namespace JurhanService_RozuctovanieDopravcov
             bool pilotny = _pilotnePriecinky.Contains(folder.FullName);
 
             _logger.PrazdnyRiadok(1);
-            _logger.Loguj($"Priečinok '{folder.FullName}' ({typSuboru}): {uids.Count} emailov.", true);
+            _logger.Loguj($"Priečinok '{folder.FullName}' ({typSuboru}): {uids.Count} emailov.", true, FarbyLogu.Priecinok);
             if (!pilotny)
             {
                 _logger.Loguj($"[PILOT] Priečinok je mimo pilotu - rozúčtovanie sa iba simuluje (bez importu do Omegy a bez presunov).", true);
@@ -320,19 +321,19 @@ namespace JurhanService_RozuctovanieDopravcov
                             // presuvame hned po zauctovani - pad medzi zauctovanim a davkovym presunom
                             // by nechal zauctovane emaily navzdy v priecinku (pri retry vratia ZiadneUhrady)
                             folder.MoveTo(uid, zauctovane);
-                            _logger.Loguj($"Email '{message.Subject}' presunutý do '{zauctovane.FullName}'.", true);
+                            _logger.Loguj($"Email '{message.Subject}' presunutý do '{zauctovane.FullName}'.", true, FarbyLogu.Uspech);
                         }
                         else
                         {
                             _logger.Loguj($"[PILOT] Email '{message.Subject}' by bol presunutý do " +
                                 $"'{folder.FullName}.{NazovPodpriecinkaZauctovane}'" +
-                                (pilotny ? " (testovací režim - nepresúvam)." : " (priečinok mimo pilotu)."), true);
+                                (pilotny ? " (testovací režim - nepresúvam)." : " (priečinok mimo pilotu)."), true, FarbyLogu.Uspech);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.Loguj($"Chyba pri spracovaní emailu {uid} v priečinku '{folder.FullName}': {ex}", true);
+                    _logger.Loguj($"Chyba pri spracovaní emailu {uid} v priečinku '{folder.FullName}': {ex}", true, FarbyLogu.Chyba);
                     _chybyBehu.Add($"Email {uid} v priečinku '{folder.FullName}': {ex}");
                 }
             }
@@ -465,7 +466,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 }
                 catch (Exception ex)
                 {
-                    _logger.Loguj($"Chyba pri zbieraní prevodov GoPay z emailu {uid}: {ex}", true);
+                    _logger.Loguj($"Chyba pri zbieraní prevodov GoPay z emailu {uid}: {ex}", true, FarbyLogu.Chyba);
                     _chybyBehu.Add($"Zbieranie prevodov GoPay, email {uid}: {ex}");
                 }
             }
@@ -532,7 +533,7 @@ namespace JurhanService_RozuctovanieDopravcov
             short mesiac = NazovSuboru.DajMesiac(Path.GetFileNameWithoutExtension(filePath));
             if (Lib.NastavTypRozuctovania(typSuboru) == eTypRozuctovania.BezZapoctuBanky && mesiac == 0)
             {
-                _logger.Loguj($"V názve súboru {Path.GetFileName(filePath)} sa nenašiel mesiac (MM.RRRR) - súbor preskakujem.", true);
+                _logger.Loguj($"V názve súboru {Path.GetFileName(filePath)} sa nenašiel mesiac (MM.RRRR) - súbor preskakujem.", true, FarbyLogu.Chyba);
                 return eVysledokRozuctovania.Chyba;
             }
             if (mesiac == 0)
@@ -694,7 +695,7 @@ namespace JurhanService_RozuctovanieDopravcov
                     if (!odpoved.IsSuccessStatusCode)
                     {
                         _logger.Loguj($"Email '{predmetEmailu}': stiahnutie výpisu zlyhalo " +
-                            $"({(int)odpoved.StatusCode} {odpoved.ReasonPhrase}).", true);
+                            $"({(int)odpoved.StatusCode} {odpoved.ReasonPhrase}).", true, FarbyLogu.Chyba);
                         return false;
                     }
                     File.WriteAllBytes(cielovySubor, odpoved.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
@@ -703,7 +704,7 @@ namespace JurhanService_RozuctovanieDopravcov
             }
             catch (Exception ex)
             {
-                _logger.Loguj($"Email '{predmetEmailu}': stiahnutie výpisu zlyhalo: {ex.Message}", true);
+                _logger.Loguj($"Email '{predmetEmailu}': stiahnutie výpisu zlyhalo: {ex.Message}", true, FarbyLogu.Chyba);
                 _chybyBehu.Add($"Stiahnutie výpisu z odkazu ({url}): {ex}");
                 return false;
             }
