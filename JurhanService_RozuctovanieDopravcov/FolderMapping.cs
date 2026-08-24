@@ -36,9 +36,13 @@ namespace JurhanService_RozuctovanieDopravcov
                 case "GEIS": return eTypSuboru.Undefined;
                 case "GLS": return eTypSuboru.Dopravca_GLS;
                 case "GLS CZ": return eTypSuboru.Dopravca_GLS;
+                // HR a SI maju vlastne typy: vypisy su v EUR ako GLS SK, takze krajina sa z meny
+                // urcit neda a rozlisuje ich priecinok (ucty 220/221, rady GLSHR/GLSSI)
+                case "GLS HR": return eTypSuboru.Dopravca_GLS_HR;
                 case "GLS HU": return eTypSuboru.Dopravca_GLS;
                 case "GLS PLN": return eTypSuboru.Dopravca_GLS_PLN;
                 case "GLS RO": return eTypSuboru.Dopravca_GLS;
+                case "GLS SI": return eTypSuboru.Dopravca_GLS_SI;
                 case "GLS SK": return eTypSuboru.Dopravca_GLS;
                 case "PACKETA": return eTypSuboru.Dopravca_Packeta;
                 case "SPS": return eTypSuboru.Dopravca_SPS;
