@@ -53,7 +53,16 @@ namespace JurhanService_RozuctovanieDopravcov
         // simuluje - nepresuvaju sa emaily a nevola sa autoimport do Omegy (kvoli rychlosti
         // testovania). Na serveri musi byt false: pilotne priecinky vtedy ostro importuju
         // a presuvaju emaily, priecinky mimo pilotu simuluju vzdy.
-        private const bool IbaSimulacia = false;
+        private const bool IbaSimulacia = true;
+
+        // DOCASNE (test formatu v9 od Packety nad emailmi, ktore uz boli spracovane a presunute):
+        // spracuje sa IBA podpriecinok "Zaúčtované" pod priecinkom PACKETA. Nic sa nepresuva a nic
+        // sa neimportuje do Omegy - priecinok nie je v _pilotnePriecinky, takze rozuctovanie ide
+        // v simulacii, a schranka sa otvara len na citanie.
+        // PO DOTESTOVANI: DocasnyTestPacketaZauctovane = false (alebo cely blok odstranit).
+        private const bool DocasnyTestPacketaZauctovane = true;
+        private const string TestovaciNazovPriecinka = "PACKETA";
+        private const eTypSuboru TestovaciTypSuboru = eTypSuboru.Dopravca_Packeta;
 
         private readonly PripojeneFirmy _pripojeneFirmy;
         private readonly string _workDir;
@@ -143,20 +152,44 @@ namespace JurhanService_RozuctovanieDopravcov
                     //    continue;
                     //}
 
-                    if (folder.Name == NazovPodpriecinkaZauctovane)
+                    eTypSuboru typSuboru;
+
+                    if (DocasnyTestPacketaZauctovane)
                     {
-                        continue;
+                        // DOCASNE: iba PACKETA z podpriecinka "Zaúčtované"; typ sa nastavuje rucne,
+                        // FolderMapping by z nazvu "Zaúčtované" vratil Undefined.
+                        // Hlada sa podla nazvu a nadradeneho priecinka, nie podla FullName - oddelovac
+                        // v ceste urcuje server a preklep v celej ceste by test potichu vypol
+                        if (folder.Name != NazovPodpriecinkaZauctovane
+                            || folder.ParentFolder?.Name != TestovaciNazovPriecinka)
+                        {
+                            continue;
+                        }
+
+                        _videnePriecinky.Add(folder.FullName);
+                        typSuboru = TestovaciTypSuboru;
+                        _logger.PrazdnyRiadok(1);
+                        _logger.Loguj($"[TEST v9] Spracúvam iba priečinok '{folder.FullName}' - bez presunov " +
+                            $"emailov a bez importu do Omegy.", true, FarbyLogu.Priecinok);
+                        _logger.PrazdnyRiadok(1);
                     }
-
-                    _videnePriecinky.Add(folder.FullName);
-
-                    eTypSuboru typSuboru = FolderMapping.DajTypSuboru(folder.Name);
-                    if (typSuboru == eTypSuboru.Undefined)
+                    else
                     {
-                        _logger.PrazdnyRiadok(1);
-                        _logger.Loguj($"Priečinok '{folder.FullName}' nie je namapovaný na typ dopravcu - preskakujem.", true, FarbyLogu.Priecinok);
-                        _logger.PrazdnyRiadok(1);
-                        continue;
+                        if (folder.Name == NazovPodpriecinkaZauctovane)
+                        {
+                            continue;
+                        }
+
+                        _videnePriecinky.Add(folder.FullName);
+
+                        typSuboru = FolderMapping.DajTypSuboru(folder.Name);
+                        if (typSuboru == eTypSuboru.Undefined)
+                        {
+                            _logger.PrazdnyRiadok(1);
+                            _logger.Loguj($"Priečinok '{folder.FullName}' nie je namapovaný na typ dopravcu - preskakujem.", true, FarbyLogu.Priecinok);
+                            _logger.PrazdnyRiadok(1);
+                            continue;
+                        }
                     }
 
                     try
@@ -205,6 +238,20 @@ namespace JurhanService_RozuctovanieDopravcov
         /// </summary>
         private void SkontrolujNazvyPilotnychPriecinkov()
         {
+            if (DocasnyTestPacketaZauctovane)
+            {
+                // DOCASNE (test v9): prechádza sa jediný priečinok, kontrola pilotných by hlásila všetky.
+                // Namiesto toho hlásime, keď sa testovací priečinok v schránke vôbec nenašiel - inak by
+                // beh dopadol ako "nič na spracovanie" a nebolo by vidieť, že sa test nespustil.
+                if (!_importNedostupny && !_videnePriecinky.Any())
+                {
+                    _logger.Loguj($"[TEST v9] Podpriečinok '{NazovPodpriecinkaZauctovane}' pod " +
+                        $"'{TestovaciNazovPriecinka}' sa v schránke nenašiel - nespracovalo sa nič.",
+                        true, FarbyLogu.Chyba);
+                }
+                return;
+            }
+
             if (_importNedostupny)
             {
                 // beh sme prerušili, časť priečinkov sme ani nevideli - hlásenie by bolo falošné
@@ -268,7 +315,9 @@ namespace JurhanService_RozuctovanieDopravcov
 
         private void SpracujPriecinok(IMailFolder folder, eTypSuboru typSuboru)
         {
-            folder.Open(FolderAccess.ReadWrite);
+            // DOCASNE (test v9): schranka sa otvara len na citanie, aby sa emailom v "Zaúčtované"
+            // nemohlo stat nic ani pri chybe v kode
+            folder.Open(DocasnyTestPacketaZauctovane ? FolderAccess.ReadOnly : FolderAccess.ReadWrite);
 
             IList<UniqueId> uids = folder.Search(SearchQuery.NotDeleted);
             if (!uids.Any())
@@ -276,7 +325,9 @@ namespace JurhanService_RozuctovanieDopravcov
                 return;
             }
 
-            bool pilotny = _pilotnePriecinky.Contains(folder.FullName);
+            // DOCASNE (test v9): testovaci priecinok v _pilotnePriecinky nie je, takze pilotny = false
+            // a rozuctovanie ide v simulacii; poistka pre pripad, ze by sa do zoznamu dostal
+            bool pilotny = !DocasnyTestPacketaZauctovane && _pilotnePriecinky.Contains(folder.FullName);
 
             _logger.PrazdnyRiadok(1);
             _logger.Loguj($"Priečinok '{folder.FullName}' ({typSuboru}): {uids.Count} emailov.", true, FarbyLogu.Priecinok);
@@ -308,7 +359,10 @@ namespace JurhanService_RozuctovanieDopravcov
                     // Podmienka MUSI obsahovat !pilotny - bez nej by na serveri ostro importovali
                     // aj priecinky mimo pilotu (21.08. tak GLS SK realne importoval a GoPay by sa
                     // zauctoval napriek vypnutiu na ziadost zakaznika).
-                    if (SpracujEmail(message, typSuboru, folder.Name,
+                    // DOCASNE (test v9): nazov priecinka je len do logov a nazvov log suborov -
+                    // "Zaúčtované" by tam nic nepovedalo, posielame nadradenu "PACKETA"
+                    if (SpracujEmail(message, typSuboru,
+                        DocasnyTestPacketaZauctovane ? TestovaciNazovPriecinka : folder.Name,
                         ibaSimulacia: !pilotny || IbaSimulacia))
                     {
                         if (pilotny && !IbaSimulacia)
@@ -638,9 +692,10 @@ namespace JurhanService_RozuctovanieDopravcov
 
         /// <summary>
         /// Packeta neposiela prílohu, ale odkazy na CSV. Stiahne najvyššiu verziu s použiteľnou hlavičkou
-        /// a rozdelí ju na jeden súbor za každý prevod (dátum výplaty + mena).
+        /// (v9) a rozdelí ju na jeden súbor za každú menu - štruktúra vstupu zostáva, mena je v názve.
+        /// Rozúčtovanie ich potom spracuje jeden po druhom ako výpisy ostatných dopravcov.
         /// </summary>
-        /// <returns>cesty k rozdeleným súborom; prázdny zoznam keď email odkaz nemá alebo sa nedá použiť</returns>
+        /// <returns>cesty k súborom po menách; prázdny zoznam keď email odkaz nemá alebo sa nedá použiť</returns>
         private List<string> StiahniCsvZOdkazu(MimeMessage message, eTypSuboru typSuboru)
         {
             var vysledok = new List<string>();
@@ -668,18 +723,21 @@ namespace JurhanService_RozuctovanieDopravcov
                     continue;
                 }
 
-                string chybajuce = PacketaCsv.ChybajuceStlpce(subor);
-                if (chybajuce != null)
+                string chybyVHlavicke = PacketaCsv.ChybyVHlavicke(subor);
+                if (chybyVHlavicke != null)
                 {
                     _logger.Loguj($"Email '{message.Subject}': CSV verzia v{odkaz.verzia} sa použiť nedá " +
-                        $"(chýbajú stĺpce: {chybajuce}) - skúšam nižšiu verziu.", true);
+                        $"({chybyVHlavicke}) - skúšam nižšiu verziu.", true);
                     File.Delete(subor);
                     continue;
                 }
 
+                // rozdelí sa na jeden súbor za každú menu (bankový prevod je vždy v jednej mene);
+                // štruktúra zostáva ako na vstupe, mena je v názve - a to aj keď je mena v súbore
+                // jediná, aby bolo z názvu vidieť, o akú menu ide
                 _logger.Loguj($"Email '{message.Subject}': výpis stiahnutý z odkazu (CSV verzia v{odkaz.verzia}).", true);
-                vysledok.AddRange(PacketaCsv.RozdelPodlaVyplat(subor, _workDir, s => _logger.Loguj(s, true)));
-                File.Delete(subor);   // rozúčtovávajú sa rozdelené súbory, originál netreba
+                vysledok.AddRange(PacketaCsv.RozdelPodlaMeny(subor, _workDir, s => _logger.Loguj(s, true)));
+                File.Delete(subor);   // rozúčtovávajú sa súbory po menách, originál netreba
                 break;
             }
 
