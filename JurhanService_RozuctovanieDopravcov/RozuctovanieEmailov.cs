@@ -20,6 +20,10 @@ namespace JurhanService_RozuctovanieDopravcov
     /// <summary>
     /// Prejde IMAP schranku platby@jurhan.com: priecinky dopravcov -> prilohy emailov -> rozuctovanie.
     /// Uspesne spracovane emaily presuva do podpriecinka "Zaúčtované".
+    ///
+    /// Vynimka je Packeta: jej vypisy sa beru z API (PacketaZApi), nie z emailov, takze sa v jej
+    /// priecinku emaily necitaju ani nepresuvaju. Emailom totiz chodia len faktury v EUR - faktury
+    /// v CZK/HUF/PLN/RON nechodia vobec a z emailov by sa nikdy nerozuctovali.
     /// </summary>
     internal class RozuctovanieEmailov
     {
@@ -60,7 +64,7 @@ namespace JurhanService_RozuctovanieDopravcov
         // sa neimportuje do Omegy - priecinok nie je v _pilotnePriecinky, takze rozuctovanie ide
         // v simulacii, a schranka sa otvara len na citanie.
         // PO DOTESTOVANI: DocasnyTestPacketaZauctovane = false (alebo cely blok odstranit).
-        private const bool DocasnyTestPacketaZauctovane = true;
+        private const bool DocasnyTestPacketaZauctovane = false;
         private const string TestovaciNazovPriecinka = "PACKETA";
         private const eTypSuboru TestovaciTypSuboru = eTypSuboru.Dopravca_Packeta;
 
@@ -316,14 +320,12 @@ namespace JurhanService_RozuctovanieDopravcov
         private void SpracujPriecinok(IMailFolder folder, eTypSuboru typSuboru)
         {
             // DOCASNE (test v9): schranka sa otvara len na citanie, aby sa emailom v "Zaúčtované"
-            // nemohlo stat nic ani pri chybe v kode
-            folder.Open(DocasnyTestPacketaZauctovane ? FolderAccess.ReadOnly : FolderAccess.ReadWrite);
+            // nemohlo stat nic ani pri chybe v kode.
+            // Packeta ide z API a emaily sa pri nej nepresuvaju, takze tam citanie staci tiez.
+            bool ibaCitanie = DocasnyTestPacketaZauctovane || Lib.JeTypSuboruZApi(typSuboru);
+            folder.Open(ibaCitanie ? FolderAccess.ReadOnly : FolderAccess.ReadWrite);
 
             IList<UniqueId> uids = folder.Search(SearchQuery.NotDeleted);
-            if (!uids.Any())
-            {
-                return;
-            }
 
             // DOCASNE (test v9): testovaci priecinok v _pilotnePriecinky nie je, takze pilotny = false
             // a rozuctovanie ide v simulacii; poistka pre pripad, ze by sa do zoznamu dostal
@@ -336,6 +338,22 @@ namespace JurhanService_RozuctovanieDopravcov
                 _logger.Loguj($"[PILOT] Priečinok je mimo pilotu - rozúčtovanie sa iba simuluje (bez importu do Omegy a bez presunov).", true);
             }
             _logger.PrazdnyRiadok(1);
+
+            if (Lib.JeTypSuboruZApi(typSuboru))
+            {
+                // Packeta: dáta sa berú z jej API, nie z emailov - preto sa spracúva aj vtedy, keď
+                // v priečinku žiadny email nie je. Emailom chodia LEN faktúry v EUR (jedna za týždeň);
+                // faktúry v CZK/HUF/PLN/RON emailom nechodia vôbec, tie by sa z emailov nikdy
+                // nerozúčtovali. Naopak výpis EUR faktúry obsahuje zásielky celého týždňa vo všetkých
+                // menách, takže rozdelené po menách nesedeli so sumami faktúr tých mien.
+                SpracujPacketaZApi(folder, typSuboru, uids.Count, pilotny);
+                return;
+            }
+
+            if (!uids.Any())
+            {
+                return;
+            }
 
             if (typSuboru == eTypSuboru.PlatobnaBrana_Gopay)
             {
@@ -406,23 +424,8 @@ namespace JurhanService_RozuctovanieDopravcov
 
             if (!prilohy.Any())
             {
-                // Packeta prílohu neposiela - výpis je za odkazom v tele emailu
-                List<string> zOdkazu = StiahniCsvZOdkazu(message, typSuboru);
-                if (!zOdkazu.Any())
-                {
-                    _logger.Loguj($"Email '{message.Subject}': neobsahuje žiadnu prílohu s názvom súboru - preskakujem.", true);
-                    return false;
-                }
-
-                foreach (string subor in zOdkazu)
-                {
-                    asponJedenSubor = true;
-                    if (!SpracujJedenSubor(subor, message, typSuboru, nazovPriecinka, ibaSimulacia))
-                    {
-                        vsetkoZauctovane = false;
-                    }
-                }
-                return vsetkoZauctovane;
+                _logger.Loguj($"Email '{message.Subject}': neobsahuje žiadnu prílohu s názvom súboru - preskakujem.", true);
+                return false;
             }
 
             // niektori dopravcovia (napr. GoPay) posielaju ten isty vypis ako .csv aj .xlsx.
@@ -544,7 +547,61 @@ namespace JurhanService_RozuctovanieDopravcov
         }
 
         /// <summary>
-        /// Rozúčtuje jeden súbor - z prílohy alebo stiahnutý z odkazu v tele emailu.
+        /// Packeta: výpisy sa stiahnu z jej API (zoznam faktúr + výpis zásielok k faktúre), rozdelia sa
+        /// na vlastnú menu faktúry a rozúčtujú jeden po druhom. Faktúry, ktoré už rozúčtované sú, vráti
+        /// jadro ako duplicitu - názvy súborov sú zhodné s tými, aké robí formulár, takže sa faktúra
+        /// nerozúčtuje dvakrát ani keď ju medzitým niekto pustil ručne.
+        ///
+        /// Emaily sa nepresúvajú: dáta z nich nejdú, takže "Zaúčtované" by o nich nič nevypovedalo.
+        /// </summary>
+        private void SpracujPacketaZApi(IMailFolder folder, eTypSuboru typSuboru, int pocetEmailov, bool pilotny)
+        {
+            // simuluje sa, ked priecinok nie je v pilote ALEBO bezi testovaci rezim - rovnaka
+            // podmienka ako pri emailovych prilohach
+            bool ibaSimulacia = !pilotny || IbaSimulacia;
+            string nazovPriecinka = DocasnyTestPacketaZauctovane ? TestovaciNazovPriecinka : folder.Name;
+
+            List<string> subory = PacketaZApi.PripravSuboryNaRozuctovanie(
+                _pripojeneFirmy._omegaPath, s => _logger.Loguj(s, true));
+
+            if (!subory.Any())
+            {
+                _logger.Loguj($"Packeta: z API sa za posledných {PacketaZApi.DniDozadu} dní nenašlo " +
+                    $"nič na rozúčtovanie.", true);
+                return;
+            }
+
+            foreach (string subor in subory)
+            {
+                if (_importNedostupny)
+                {
+                    // zvysne subory sa spracuju pri dalsom behu - z API sa stiahnu znova
+                    break;
+                }
+
+                try
+                {
+                    _logger.Loguj($"Packeta: spracúvam súbor {Path.GetFileName(subor)}.", true);
+                    eVysledokRozuctovania vysledok = SpracujSubor(subor, typSuboru, nazovPriecinka, ibaSimulacia);
+                    _logger.Loguj($"Súbor {Path.GetFileName(subor)}: {vysledok}.", true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Loguj($"Chyba pri rozúčtovaní súboru {Path.GetFileName(subor)} z API Packety: {ex}",
+                        true, FarbyLogu.Chyba);
+                    _chybyBehu.Add($"Súbor {Path.GetFileName(subor)} z API Packety: {ex}");
+                }
+            }
+
+            if (pocetEmailov > 0)
+            {
+                _logger.Loguj($"Packeta: {pocetEmailov} emailov v priečinku nepresúvam - dáta idú z API " +
+                    $"a emaily sú len oznámenie.", true);
+            }
+        }
+
+        /// <summary>
+        /// Rozúčtuje jeden súbor z prílohy emailu.
         /// </summary>
         /// <returns>true, ak sa súbor počíta ako vybavený (email môže ísť do "Zaúčtované")</returns>
         private bool SpracujJedenSubor(string filePath, MimeMessage message, eTypSuboru typSuboru,
@@ -619,8 +676,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 nazovPriecinka = nazovPriecinka,
                 ibaSimulacia = ibaSimulacia, // pilot: mimo pilotnych priecinkov sa nic nezapisuje do Omegy
                 pouziteBankoveDoklady = _pouziteBankoveDoklady, // jeden bankovy vypis = jedno rozuctovanie
-                Loguj = s => _logger.Loguj(s, true), // kritéria hľadania dokladu do logu služby
-                PrazdnyRiadok = n => _logger.PrazdnyRiadok(n),
+                logger = _logger, // riadky rozúčtovania do logu služby, jadro pri nich určuje farby
                 zobrazenieChyby = eZobrazenieChyby.ZapisDoSuboru,
                 typSpustenia = Program.typSpustenia,
             };
@@ -678,105 +734,6 @@ namespace JurhanService_RozuctovanieDopravcov
             return new EudHlavickaRepository(_pripojeneFirmy.dataProvider)
                 .DajDoklady("C149_ImportText = @1 OR C149_ImportText = @2", nazov, "dopravca: " + nazov)
                 .Any();
-        }
-
-        // Packeta: v tele emailu su odkazy na CSV vo verziach v2..v9. Berieme len tuto adresu - nikdy nie
-        // lubovolny odkaz z lubovolneho emailu. Pouzitelna je najvyssia verzia, ktorej hlavicka obsahuje
-        // vsetky potrebne stlpce (dnes v9, jedina s datumom odoslania dobierok).
-        private static readonly System.Text.RegularExpressions.Regex _odkazPacketa =
-            new System.Text.RegularExpressions.Regex(
-                @"https://www\.zasielkovna\.sk/api/v(?<verzia>\d+)/invoice-packet\.csv\?[^""'\s<>]+",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        private static readonly System.Net.Http.HttpClient _httpClient =
-            new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(2) };
-
-        /// <summary>
-        /// Packeta neposiela prílohu, ale odkazy na CSV. Stiahne najvyššiu verziu s použiteľnou hlavičkou
-        /// (v9) a rozdelí ju na jeden súbor za každú menu - štruktúra vstupu zostáva, mena je v názve.
-        /// Rozúčtovanie ich potom spracuje jeden po druhom ako výpisy ostatných dopravcov.
-        /// </summary>
-        /// <returns>cesty k súborom po menách; prázdny zoznam keď email odkaz nemá alebo sa nedá použiť</returns>
-        private List<string> StiahniCsvZOdkazu(MimeMessage message, eTypSuboru typSuboru)
-        {
-            var vysledok = new List<string>();
-            if (typSuboru != eTypSuboru.Dopravca_Packeta || string.IsNullOrEmpty(message.HtmlBody))
-            {
-                return vysledok;
-            }
-
-            // od najvyssej verzie - nizsie nemaju datum odoslania dobierok
-            var odkazy = _odkazPacketa.Matches(message.HtmlBody).Cast<System.Text.RegularExpressions.Match>()
-                .Select(m => new { url = m.Value.Replace("&amp;", "&"), verzia = int.Parse(m.Groups["verzia"].Value) })
-                .OrderByDescending(o => o.verzia)
-                .ToList();
-            if (!odkazy.Any())
-            {
-                return vysledok;
-            }
-
-            string cislo = DajCisloFakturyPacketa(message.HtmlBody);
-            foreach (var odkaz in odkazy)
-            {
-                string subor = Path.Combine(_workDir, $"Packeta_{cislo}_v{odkaz.verzia}.csv");
-                if (!StiahniSubor(odkaz.url, subor, message.Subject))
-                {
-                    continue;
-                }
-
-                string chybyVHlavicke = PacketaCsv.ChybyVHlavicke(subor);
-                if (chybyVHlavicke != null)
-                {
-                    _logger.Loguj($"Email '{message.Subject}': CSV verzia v{odkaz.verzia} sa použiť nedá " +
-                        $"({chybyVHlavicke}) - skúšam nižšiu verziu.", true);
-                    File.Delete(subor);
-                    continue;
-                }
-
-                // rozdelí sa na jeden súbor za každú menu (bankový prevod je vždy v jednej mene);
-                // štruktúra zostáva ako na vstupe, mena je v názve - a to aj keď je mena v súbore
-                // jediná, aby bolo z názvu vidieť, o akú menu ide
-                _logger.Loguj($"Email '{message.Subject}': výpis stiahnutý z odkazu (CSV verzia v{odkaz.verzia}).", true);
-                vysledok.AddRange(PacketaCsv.RozdelPodlaMeny(subor, _workDir, s => _logger.Loguj(s, true)));
-                File.Delete(subor);   // rozúčtovávajú sa súbory po menách, originál netreba
-                break;
-            }
-
-            return vysledok;
-        }
-
-        private bool StiahniSubor(string url, string cielovySubor, string predmetEmailu)
-        {
-            try
-            {
-                using (var odpoved = _httpClient.GetAsync(url).GetAwaiter().GetResult())
-                {
-                    if (!odpoved.IsSuccessStatusCode)
-                    {
-                        _logger.Loguj($"Email '{predmetEmailu}': stiahnutie výpisu zlyhalo " +
-                            $"({(int)odpoved.StatusCode} {odpoved.ReasonPhrase}).", true, FarbyLogu.Chyba);
-                        return false;
-                    }
-                    File.WriteAllBytes(cielovySubor, odpoved.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Loguj($"Email '{predmetEmailu}': stiahnutie výpisu zlyhalo: {ex.Message}", true, FarbyLogu.Chyba);
-                _chybyBehu.Add($"Stiahnutie výpisu z odkazu ({url}): {ex}");
-                return false;
-            }
-        }
-
-        /// <summary>Číslo faktúry z tela emailu - do názvu súboru, aby bol kľúč rozúčtovania stabilný.</summary>
-        private static string DajCisloFakturyPacketa(string htmlBody)
-        {
-            var m = System.Text.RegularExpressions.Regex.Match(htmlBody, @"qrpay/(?<cislo>\d+)\.png");
-            if (!m.Success)
-            {
-                m = System.Text.RegularExpressions.Regex.Match(htmlBody, @"(?:číslo|Variabiln\w+ symbol:)\s*(?<cislo>\d{6,})");
-            }
-            return m.Success ? m.Groups["cislo"].Value : DateTime.Now.ToString("yyyyMMddHHmmss");
         }
 
         /// <summary>Kontrolný súčet obsahu prílohy - dva emaily s tým istým reportom dajú rovnaký odtlačok.</summary>
