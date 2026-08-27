@@ -57,7 +57,7 @@ namespace JurhanService_RozuctovanieDopravcov
         // simuluje - nepresuvaju sa emaily a nevola sa autoimport do Omegy (kvoli rychlosti
         // testovania). Na serveri musi byt false: pilotne priecinky vtedy ostro importuju
         // a presuvaju emaily, priecinky mimo pilotu simuluju vzdy.
-        private const bool IbaSimulacia = true;
+        private const bool IbaSimulacia = false;
 
         // DOCASNE (test formatu v9 od Packety nad emailmi, ktore uz boli spracovane a presunute):
         // spracuje sa IBA podpriecinok "Zaúčtované" pod priecinkom PACKETA. Nic sa nepresuva a nic
@@ -465,7 +465,7 @@ namespace JurhanService_RozuctovanieDopravcov
                 //    continue;
                 //}
 
-                string filePath = UlozPrilohu(attachment);
+                string filePath = UlozPrilohu(attachment, DajNazovPrilohy(attachment, message, typSuboru));
                 if (filePath == null)
                 {
                     // nepodporovaná prípona - treba to vidieť v logu, inak sa nedá zistiť, v akej podobe
@@ -746,9 +746,9 @@ namespace JurhanService_RozuctovanieDopravcov
             }
         }
 
-        private string UlozPrilohu(MimePart attachment)
+        private string UlozPrilohu(MimePart attachment, string nazovSuboru = null)
         {
-            string fileName = attachment.FileName;
+            string fileName = nazovSuboru ?? attachment.FileName;
             if (!_povolenePripony.Contains(Path.GetExtension(fileName).ToLowerInvariant()))
             {
                 return null;
@@ -760,6 +760,25 @@ namespace JurhanService_RozuctovanieDopravcov
                 attachment.Content.DecodeTo(stream);
             }
             return filePath;
+        }
+
+        /// <summary>
+        /// Názov, pod ktorým sa príloha uloží a rozúčtuje. DPD SK posiela KAŽDÝ report s tým istým
+        /// názvom (sales_company_..._LWD/LWW) - a kľúč "už zaúčtované" je názov súboru, takže po prvom
+        /// zaúčtovaní sa každý ďalší report hlásil ako duplicita a email sa presunul BEZ zaúčtovania
+        /// (26.08.2026). Dátum emailu robí názov jedinečným a je stabilný naprieč behmi, takže detekcia
+        /// skutočných duplicít (ten istý email pri ďalšom behu) funguje ďalej. Ostatným dopravcom sa
+        /// názov nemení - nesú dátum či číslo faktúry v názve a napr. GoPay/DPD RO si z názvu čítajú údaje.
+        /// </summary>
+        private static string DajNazovPrilohy(MimePart attachment, MimeMessage message, eTypSuboru typSuboru)
+        {
+            if (typSuboru != eTypSuboru.Dopravca_DPD_Slovensko)
+            {
+                return attachment.FileName;
+            }
+            return Path.GetFileNameWithoutExtension(attachment.FileName)
+                + "_" + message.Date.LocalDateTime.ToString("yyyy-MM-dd")
+                + Path.GetExtension(attachment.FileName);
         }
 
         private IMailFolder DajAleboVytvorZauctovane(IMailFolder folder)
