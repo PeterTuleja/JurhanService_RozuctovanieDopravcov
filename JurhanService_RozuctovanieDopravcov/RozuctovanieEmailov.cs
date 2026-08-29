@@ -642,7 +642,9 @@ namespace JurhanService_RozuctovanieDopravcov
         private eVysledokRozuctovania SpracujSubor(string filePath, eTypSuboru typSuboru, string nazovPriecinka, bool ibaSimulacia)
         {
             short mesiac = NazovSuboru.DajMesiac(Path.GetFileNameWithoutExtension(filePath));
-            if (Lib.NastavTypRozuctovania(typSuboru) == eTypRozuctovania.BezZapoctuBanky && mesiac == 0)
+            // kasa ma datum uhrady v kazdom riadku exportu - mesiac z nazvu suboru nepotrebuje
+            if (Lib.NastavTypRozuctovania(typSuboru) == eTypRozuctovania.BezZapoctuBanky && mesiac == 0
+                && !Lib.JeTypSuboruKasa(typSuboru))
             {
                 _logger.Loguj($"V názve súboru {Path.GetFileName(filePath)} sa nenašiel mesiac (MM.RRRR) - súbor preskakujem.", true, FarbyLogu.Chyba);
                 return eVysledokRozuctovania.Chyba;

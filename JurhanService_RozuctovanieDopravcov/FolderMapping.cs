@@ -55,6 +55,8 @@ namespace JurhanService_RozuctovanieDopravcov
                 case "Kaufland PL": return eTypSuboru.Kaufland_PLN_PL;
                 case "Emag RO": return eTypSuboru.Emag_RON_RO;
                 case "Emag HU": return eTypSuboru.Emag_HUF_HU;
+                // export dokladov z registracnej pokladnice (hotovost + karty)
+                case "Kasa": return eTypSuboru.Kasa;
                 default: return eTypSuboru.Undefined;
             }
         }
