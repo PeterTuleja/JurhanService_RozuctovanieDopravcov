@@ -905,3 +905,10 @@ Okruh PD (TypOkruh 160) sa cez TXT autoimport nikdy nepoužil — pred nasadení
 - [ ] **Step 7.5:** Pustiť ten istý súbor druhý raz — musí skončiť ako `Duplicita` (kľúč súboru); premenovaný súbor s rovnakými dokladmi musí skončiť `VsetkoUzUhradene` (faktúry už uhradené), bez nových dokladov.
 - [ ] **Step 7.6:** Overiť v Omege zákazníka, že číselný rad P1/P je založený pre rok 2026 (na screenshote existuje — doklad P-0283).
 - [ ] **Step 7.7:** Po úspešnom overení: pridať priečinok kasy do `_pilotnePriecinky` v `RozuctovanieEmailov.cs` (presný `FullName` podľa schránky) — samostatný commit v repe služby.
+
+Doplnené zo záverečného code review (29.08.2026):
+
+- [ ] **Step 7.8:** Otestovať čiastočnú úhradu (kasa zaplatí menej než suma faktúry) — overiť, že Omega spáruje čiastočne a faktúra ostane čiastočne uhradená.
+- [ ] **Step 7.9:** Druhý beh nad prekrývajúcim sa súborom spustiť až PO ostrom importe prvého (v simulácii sa prekryv neodchytí — C220_Uhradene sa nemení, pilotný log môže tie isté doklady „zaúčtovať" viackrát).
+- [ ] **Step 7.10:** OTVORENÉ ROZHODNUTIE pred pilotom: email, ktorého export obsahuje LEN nepodporované platby (poukážky/QR/storná), skončí ako `ZiadneUhrady` a ostane v priečinku navždy — služba ho spracuje pri každom behu znova. Rozhodnúť: ručný presun do „Zaúčtované", alebo počítať vykázané nepodporované riadky ako vybavené (úprava kódu).
+- [ ] **Step 7.11:** Overiť, že reálny export má hlavičku v prvom použitom riadku hárku (titulný riadok nad hlavičkou by skončil bezpečnou chybou „nenašiel sa stĺpec").
