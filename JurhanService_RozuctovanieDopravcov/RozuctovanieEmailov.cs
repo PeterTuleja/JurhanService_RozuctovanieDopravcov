@@ -28,6 +28,7 @@ namespace JurhanService_RozuctovanieDopravcov
     internal class RozuctovanieEmailov
     {
         private const string NazovPodpriecinkaZauctovane = "Zaúčtované";
+        private const string NazovPodadresaraSuborovDopravcov = "csv";
         private static readonly string[] _povolenePripony = { ".csv", ".xlsx", ".xls" };
 
         // PILOT (skusobne nasadenie): v tychto priecinkoch sa robi ostre rozuctovanie (import do Omegy),
@@ -684,9 +685,11 @@ namespace JurhanService_RozuctovanieDopravcov
             };
 
             RozuctovanieCore core = new RozuctovanieCore(ctx);
-            // zaloha do <exe>\Log s povodnym nazvom prilohy (bez casovej peciatky);
-            // subor sa po spracovani z pracovneho adresara zmaze, zaloha ostava (pri rovnakom nazve sa prepise)
-            string zalohaDir = ServicesLog.NameApplicationLogPath();
+            // zaloha do <exe>\Log\<aplikacia>\yyyy_MM_dd\csv s povodnym nazvom prilohy (bez casovej
+            // peciatky); subory dopravcov idu do samostatneho podadresara, aby sa v adresari dna
+            // nemiesali s .log a suhrnnymi zoznamami behu. Subor sa po spracovani z pracovneho
+            // adresara zmaze, zaloha ostava (pri rovnakom nazve sa prepise)
+            string zalohaDir = Path.Combine(ServicesLog.NameApplicationLogPath(), NazovPodadresaraSuborovDopravcov);
             Directory.CreateDirectory(zalohaDir);
             File.Copy(filePath, Path.Combine(zalohaDir, Path.GetFileName(filePath)), true);
             eVysledokRozuctovania vysledok;
